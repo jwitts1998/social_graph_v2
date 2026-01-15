@@ -8,23 +8,21 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ALTER TABLE conversations
 ADD COLUMN IF NOT EXISTS context_embedding vector(1536);
 
--- Create indexes for efficient similarity search
--- Using ivfflat index with cosine distance (good for OpenAI embeddings)
-
--- Index for contact bio embeddings
-CREATE INDEX IF NOT EXISTS idx_contacts_bio_embedding_cosine 
-ON contacts USING ivfflat (bio_embedding vector_cosine_ops)
-WITH (lists = 100);
-
--- Index for contact thesis embeddings  
-CREATE INDEX IF NOT EXISTS idx_contacts_thesis_embedding_cosine
-ON contacts USING ivfflat (thesis_embedding vector_cosine_ops)
-WITH (lists = 100);
-
--- Index for conversation context embeddings
-CREATE INDEX IF NOT EXISTS idx_conversations_context_embedding_cosine
-ON conversations USING ivfflat (context_embedding vector_cosine_ops)
-WITH (lists = 100);
+-- NOTE: Index creation is commented out due to memory constraints during migration
+-- The vector columns work without indexes (indexes only improve query performance)
+-- 
+-- To create indexes manually via Supabase SQL Editor (after migration completes):
+-- 
+-- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_contacts_bio_embedding_cosine 
+-- ON contacts USING ivfflat (bio_embedding vector_cosine_ops) WITH (lists = 10);
+-- 
+-- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_contacts_thesis_embedding_cosine
+-- ON contacts USING ivfflat (thesis_embedding vector_cosine_ops) WITH (lists = 10);
+-- 
+-- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_conversations_context_embedding_cosine
+-- ON conversations USING ivfflat (context_embedding vector_cosine_ops) WITH (lists = 10);
+--
+-- Using CONCURRENTLY allows index creation without blocking table access
 
 -- Add comments
 COMMENT ON COLUMN conversations.context_embedding IS 'Embedding of conversation context (sectors, stages, goals, needs) for semantic matching';
