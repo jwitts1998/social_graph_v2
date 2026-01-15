@@ -51,21 +51,48 @@ CREATE TABLE IF NOT EXISTS pipeline_jobs (
 -- Add RLS policies
 ALTER TABLE pipeline_jobs ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Users can view their own pipeline jobs"
-  ON pipeline_jobs FOR SELECT
-  USING (auth.uid() = owned_by_profile);
-
-CREATE POLICY "Users can insert their own pipeline jobs"
-  ON pipeline_jobs FOR INSERT
-  WITH CHECK (auth.uid() = owned_by_profile);
-
-CREATE POLICY "Users can update their own pipeline jobs"
-  ON pipeline_jobs FOR UPDATE
-  USING (auth.uid() = owned_by_profile);
-
-CREATE POLICY "Users can delete their own pipeline jobs"
-  ON pipeline_jobs FOR DELETE
-  USING (auth.uid() = owned_by_profile);
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'pipeline_jobs' 
+        AND policyname = 'Users can view their own pipeline jobs'
+    ) THEN
+        CREATE POLICY "Users can view their own pipeline jobs"
+          ON pipeline_jobs FOR SELECT
+          USING (auth.uid() = owned_by_profile);
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'pipeline_jobs' 
+        AND policyname = 'Users can insert their own pipeline jobs'
+    ) THEN
+        CREATE POLICY "Users can insert their own pipeline jobs"
+          ON pipeline_jobs FOR INSERT
+          WITH CHECK (auth.uid() = owned_by_profile);
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'pipeline_jobs' 
+        AND policyname = 'Users can update their own pipeline jobs'
+    ) THEN
+        CREATE POLICY "Users can update their own pipeline jobs"
+          ON pipeline_jobs FOR UPDATE
+          USING (auth.uid() = owned_by_profile);
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'pipeline_jobs' 
+        AND policyname = 'Users can delete their own pipeline jobs'
+    ) THEN
+        CREATE POLICY "Users can delete their own pipeline jobs"
+          ON pipeline_jobs FOR DELETE
+          USING (auth.uid() = owned_by_profile);
+    END IF;
+END $$;
 
 -- Index for quick lookups
 CREATE INDEX IF NOT EXISTS idx_pipeline_jobs_enabled ON pipeline_jobs(enabled) WHERE enabled = true;

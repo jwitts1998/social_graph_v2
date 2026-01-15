@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Mail, X, Clock, Building2, Briefcase, Star, Check, ThumbsUp, ThumbsDown, Heart } from "lucide-react";
+import MatchScoreBreakdown from "@/components/MatchScoreBreakdown";
 
 interface ContactDetails {
   name: string;
@@ -18,6 +19,24 @@ interface ContactDetails {
   relationshipStrength?: number | null; // 0-100 scale
 }
 
+interface ScoreBreakdown {
+  semantic: number;
+  tagOverlap: number;
+  roleMatch: number;
+  geoMatch: number;
+  relationship: number;
+  nameMatch?: number;
+}
+
+interface ConfidenceScores {
+  semantic: number;
+  tagOverlap: number;
+  roleMatch: number;
+  geoMatch: number;
+  relationship: number;
+  overall: number;
+}
+
 interface SuggestionCardProps {
   contact: ContactDetails;
   score: 1 | 2 | 3;
@@ -31,6 +50,10 @@ interface SuggestionCardProps {
   isPending?: boolean;
   matchId?: string;
   aiExplanation?: string | null;
+  rawScore?: number;
+  scoreBreakdown?: ScoreBreakdown;
+  confidenceScores?: ConfidenceScores;
+  matchVersion?: string;
 }
 
 export default function SuggestionCard({
@@ -46,6 +69,10 @@ export default function SuggestionCard({
   isPending = false,
   matchId,
   aiExplanation,
+  rawScore,
+  scoreBreakdown,
+  confidenceScores,
+  matchVersion,
 }: SuggestionCardProps) {
   const scoreColors = {
     1: "bg-muted text-muted-foreground",
@@ -165,6 +192,19 @@ export default function SuggestionCard({
           </div>
         )}
       </div>
+      
+      {/* Score Breakdown - Transparency Feature */}
+      {scoreBreakdown && confidenceScores && rawScore !== undefined && (
+        <div className="mt-4">
+          <MatchScoreBreakdown
+            scoreBreakdown={scoreBreakdown}
+            confidenceScores={confidenceScores}
+            rawScore={rawScore}
+            starScore={score}
+            matchVersion={matchVersion}
+          />
+        </div>
+      )}
       
       {status === 'pending' && (
         <div className="flex items-center gap-2 pt-2">

@@ -179,7 +179,7 @@ export default function Contacts() {
                 geo={undefined}
                 relationshipStrength={0.5}
                 tags={[]}
-                lastInteractionAt={contact.updatedAt.toISOString()}
+                lastInteractionAt={contact.updatedAt ? (typeof contact.updatedAt === 'string' ? contact.updatedAt : contact.updatedAt.toISOString()) : new Date().toISOString()}
                 contactType={contact.contactType || undefined}
                 isInvestor={contact.isInvestor || false}
                 checkSizeMin={contact.checkSizeMin || undefined}

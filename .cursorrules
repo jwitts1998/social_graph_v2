@@ -1,0 +1,138 @@
+# Cursor Rules for Social Graph v2
+
+## Project Overview
+This is a social graph connector application that helps users make warm introductions by matching conversation content with contacts in their network. The system uses AI-powered entity extraction and weighted scoring algorithms to suggest relevant connections.
+
+## Tech Stack
+- **Frontend**: React + TypeScript, Vite, TailwindCSS, shadcn/ui
+- **Backend**: Supabase (PostgreSQL, Edge Functions), Deno
+- **AI**: OpenAI GPT-4o-mini for entity extraction and explanations
+- **State Management**: TanStack Query (React Query)
+- **Database ORM**: Drizzle ORM (for type generation only, actual queries use Supabase client)
+
+## Architecture Principles
+
+### 1. Matching System
+- **Location**: `supabase/functions/generate-matches/index.ts`
+- Uses weighted scoring algorithm with multiple factors:
+  - Semantic similarity (20%)
+  - Tag overlap via Jaccard similarity (35%)
+  - Role matching (15%)
+  - Geographic matching (10%)
+  - Relationship strength (20%)
+  - Name matching boost (up to +0.3)
+- Star ratings: 1 star (≥0.05), 2 stars (≥0.20), 3 stars (≥0.40)
+- Only matches with ≥1 star are included
+
+### 2. Entity Extraction
+- **Location**: `supabase/functions/extract-entities/index.ts`
+- Uses GPT-4o-mini to extract rich context from conversations
+- Extracts: target person, goals/needs, domains/topics, matching intent
+- Stores both legacy entities (for backward compatibility) and rich context JSON
+
+### 3. Database Schema
+- **Location**: `shared/schema.ts`
+- Uses Drizzle ORM for type definitions only
+- Actual queries use Supabase client directly
+- Key tables: `contacts`, `conversations`, `match_suggestions`, `theses`, `conversation_entities`
+
+### 4. Real-time Processing
+- Conversations processed every 5 seconds during recording
+- Pipeline: Extract participants → Extract entities → Generate matches
+- Uses Supabase real-time subscriptions for UI updates
+
+## Code Style Guidelines
+
+### TypeScript
+- Use strict TypeScript with proper types
+- Prefer interfaces over types for object shapes
+- Use `zod` for runtime validation
+- Export types from `shared/schema.ts` for database entities
+
+### React Components
+- Use functional components with hooks
+- Prefer composition over inheritance
+- Use shadcn/ui components from `client/src/components/ui/`
+- Follow the existing component structure in `client/src/components/`
+
+### Supabase Edge Functions
+- Use Deno runtime
+- Always include CORS headers
+- Use service role client for admin operations
+- Use user client for authenticated operations
+- Handle errors gracefully with proper error responses
+
+### File Naming
+- Components: PascalCase (e.g., `SuggestionCard.tsx`)
+- Hooks: camelCase with `use` prefix (e.g., `useMatches.ts`)
+- Utilities: camelCase (e.g., `supabaseHelpers.ts`)
+- Edge functions: kebab-case directories (e.g., `generate-matches/`)
+
+## Matching System Development
+
+### When Modifying Matching Logic
+1. Update weights in `WEIGHTS` constant if changing scoring balance
+2. Update star rating thresholds if changing match inclusion criteria
+3. Test with various conversation types (fundraising, hiring, partnerships)
+4. Ensure backward compatibility with existing match_suggestions data
+5. Update `docs/MATCHING_LOGIC.md` with algorithm changes
+
+### When Adding New Scoring Factors
+1. Add to `matchDetails` interface
+2. Calculate score (0-1 normalized)
+3. Add to weighted score calculation
+4. Include in reasons array for transparency
+5. Update documentation
+
+### Performance Considerations
+- Limit matches to top 20 results
+- Use database indexes on frequently queried fields
+- Cache entity extraction results when possible
+- Batch AI explanation generation (currently top 5, 2+ stars)
+
+## Testing Strategy
+- Test matching with various entity combinations
+- Verify name matching handles nicknames correctly
+- Test edge cases: empty entities, no contacts, single contact
+- Verify real-time updates work correctly
+- Test AI explanation generation
+
+## Documentation Requirements
+- Update `docs/MATCHING_LOGIC.md` when algorithm changes
+- Document new features in appropriate markdown files
+- Keep architecture documentation in `docs/` directory
+- Include code comments for complex algorithms
+
+## Common Patterns
+
+### Supabase Query Pattern
+```typescript
+const { data, error } = await supabase
+  .from('table_name')
+  .select('field1, field2, relation:foreign_key (related_field)')
+  .eq('filter_field', value)
+  .order('sort_field', { ascending: false });
+```
+
+### Edge Function Pattern
+```typescript
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+  try {
+    // Auth check
+    // Business logic
+    // Return response
+  } catch (error) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 400 });
+  }
+});
+```
+
+## Matching System Improvements (Future)
+- Add embedding-based semantic matching
+- Implement feedback loop for learning from user actions
+- Add more sophisticated name matching (fuzzy, phonetic)
+- Improve geographic matching with location normalization
+- Add temporal factors (recent interactions, time-sensitive needs)

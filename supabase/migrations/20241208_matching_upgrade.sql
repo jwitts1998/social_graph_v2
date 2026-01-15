@@ -18,20 +18,54 @@ COMMENT ON COLUMN conversations.domains_and_topics IS 'Industries, keywords, geo
 -- Phase 2A: Enable pgvector extension for semantic similarity
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Add embedding columns to contacts for semantic matching
-ALTER TABLE contacts
-ADD COLUMN IF NOT EXISTS bio_embedding vector(1536),
-ADD COLUMN IF NOT EXISTS thesis_embedding vector(1536);
+-- Fix embedding columns if they exist with wrong type, or create them
+DO $$ 
+BEGIN
+    -- Fix bio_embedding if it exists as wrong type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'contacts' 
+        AND column_name = 'bio_embedding'
+        AND data_type != 'USER-DEFINED'
+    ) THEN
+        ALTER TABLE contacts DROP COLUMN bio_embedding;
+        ALTER TABLE contacts ADD COLUMN bio_embedding vector(1536);
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'contacts' 
+        AND column_name = 'bio_embedding'
+    ) THEN
+        ALTER TABLE contacts ADD COLUMN bio_embedding vector(1536);
+    END IF;
+    
+    -- Fix thesis_embedding if it exists as wrong type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'contacts' 
+        AND column_name = 'thesis_embedding'
+        AND data_type != 'USER-DEFINED'
+    ) THEN
+        ALTER TABLE contacts DROP COLUMN thesis_embedding;
+        ALTER TABLE contacts ADD COLUMN thesis_embedding vector(1536);
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'contacts' 
+        AND column_name = 'thesis_embedding'
+    ) THEN
+        ALTER TABLE contacts ADD COLUMN thesis_embedding vector(1536);
+    END IF;
+END $$;
 
 COMMENT ON COLUMN contacts.bio_embedding IS 'OpenAI text-embedding-3-small vector of bio/about';
 COMMENT ON COLUMN contacts.thesis_embedding IS 'OpenAI text-embedding-3-small vector of investor thesis';
 
--- Create index for fast vector similarity search
-CREATE INDEX IF NOT EXISTS contacts_bio_embedding_idx ON contacts 
-USING ivfflat (bio_embedding vector_cosine_ops) WITH (lists = 100);
+-- Drop old indexes if they exist (in case they're broken)
+DROP INDEX IF EXISTS contacts_bio_embedding_idx;
+DROP INDEX IF EXISTS contacts_thesis_embedding_idx;
 
-CREATE INDEX IF NOT EXISTS contacts_thesis_embedding_idx ON contacts 
-USING ivfflat (thesis_embedding vector_cosine_ops) WITH (lists = 100);
+-- Note: ivfflat indexes will be created in a separate migration (20250115000001_add_embedding_indexes.sql)
+-- This avoids memory issues during initial migration
+-- Vector columns are ready for use even without indexes (indexes just improve query performance)
 
 -- Phase 2B: Create contact_aliases table for fuzzy name matching
 CREATE TABLE IF NOT EXISTS contact_aliases (
@@ -46,20 +80,41 @@ CREATE TABLE IF NOT EXISTS contact_aliases (
 ALTER TABLE contact_aliases ENABLE ROW LEVEL SECURITY;
 
 -- RLS policy: users can see aliases for contacts they own
-CREATE POLICY "Users can view aliases for their contacts" ON contact_aliases
-  FOR SELECT USING (
-    contact_id IN (SELECT id FROM contacts WHERE owned_by_profile = auth.uid())
-  );
-
-CREATE POLICY "Users can insert aliases for their contacts" ON contact_aliases
-  FOR INSERT WITH CHECK (
-    contact_id IN (SELECT id FROM contacts WHERE owned_by_profile = auth.uid())
-  );
-
-CREATE POLICY "Users can delete aliases for their contacts" ON contact_aliases
-  FOR DELETE USING (
-    contact_id IN (SELECT id FROM contacts WHERE owned_by_profile = auth.uid())
-  );
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'contact_aliases' 
+        AND policyname = 'Users can view aliases for their contacts'
+    ) THEN
+        CREATE POLICY "Users can view aliases for their contacts" ON contact_aliases
+          FOR SELECT USING (
+            contact_id IN (SELECT id FROM contacts WHERE owned_by_profile = auth.uid())
+          );
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'contact_aliases' 
+        AND policyname = 'Users can insert aliases for their contacts'
+    ) THEN
+        CREATE POLICY "Users can insert aliases for their contacts" ON contact_aliases
+          FOR INSERT WITH CHECK (
+            contact_id IN (SELECT id FROM contacts WHERE owned_by_profile = auth.uid())
+          );
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'contact_aliases' 
+        AND policyname = 'Users can delete aliases for their contacts'
+    ) THEN
+        CREATE POLICY "Users can delete aliases for their contacts" ON contact_aliases
+          FOR DELETE USING (
+            contact_id IN (SELECT id FROM contacts WHERE owned_by_profile = auth.uid())
+          );
+    END IF;
+END $$;
 
 -- Create index for fast alias lookups
 CREATE INDEX IF NOT EXISTS contact_aliases_contact_id_idx ON contact_aliases(contact_id);
@@ -75,8 +130,8 @@ CREATE INDEX IF NOT EXISTS contact_aliases_value_trgm_idx ON contact_aliases USI
 
 -- Phase 2C: Create match_feedback table for learning
 CREATE TABLE IF NOT EXISTS match_feedback (
-  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  suggestion_id VARCHAR NOT NULL REFERENCES match_suggestions(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  suggestion_id UUID NOT NULL REFERENCES match_suggestions(id) ON DELETE CASCADE,
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   feedback TEXT NOT NULL, -- 'thumbs_up', 'thumbs_down', 'saved', 'intro_sent'
   feedback_reason TEXT,
@@ -87,11 +142,26 @@ CREATE TABLE IF NOT EXISTS match_feedback (
 ALTER TABLE match_feedback ENABLE ROW LEVEL SECURITY;
 
 -- RLS policy: users can only see and create their own feedback
-CREATE POLICY "Users can view their own feedback" ON match_feedback
-  FOR SELECT USING (profile_id = auth.uid());
-
-CREATE POLICY "Users can insert their own feedback" ON match_feedback
-  FOR INSERT WITH CHECK (profile_id = auth.uid());
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'match_feedback' 
+        AND policyname = 'Users can view their own feedback'
+    ) THEN
+        CREATE POLICY "Users can view their own feedback" ON match_feedback
+          FOR SELECT USING (profile_id = auth.uid());
+    END IF;
+    
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies 
+        WHERE tablename = 'match_feedback' 
+        AND policyname = 'Users can insert their own feedback'
+    ) THEN
+        CREATE POLICY "Users can insert their own feedback" ON match_feedback
+          FOR INSERT WITH CHECK (profile_id = auth.uid());
+    END IF;
+END $$;
 
 -- Create indexes for feedback analysis
 CREATE INDEX IF NOT EXISTS match_feedback_suggestion_id_idx ON match_feedback(suggestion_id);
