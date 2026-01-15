@@ -7,7 +7,7 @@ import PersonSection from "@/components/PersonSection";
 import SuggestionCard from "@/components/SuggestionCard";
 import IntroEmailPanel from "@/components/IntroEmailPanel";
 import IntroEmailDrawer from "@/components/IntroEmailDrawer";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, RefreshCw } from "lucide-react";
 import { Link, useRoute } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useMemo } from "react";
@@ -15,6 +15,7 @@ import { useConversation, useConversationSegments } from "@/hooks/useConversatio
 import { useMatchSuggestions, useUpdateMatchStatus } from "@/hooks/useMatches";
 import { useProfile } from "@/hooks/useProfile";
 import { format } from "date-fns";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface PromisedIntro {
   id: string;
@@ -38,6 +39,7 @@ export default function ConversationDetail() {
   const { data: matches = [], isLoading: matchesLoading } = useMatchSuggestions(conversationId);
   const { data: profile } = useProfile();
   const updateStatus = useUpdateMatchStatus(conversationId);
+  const queryClient = useQueryClient();
 
   const transcript = useMemo(() => {
     return segments
@@ -171,6 +173,67 @@ export default function ConversationDetail() {
     });
   };
 
+  const regenerateMatches = useMutation({
+    mutationFn: async (convId: string) => {
+      const response = await fetch(`/api/supabase/functions/v1/extract-entities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: convId }),
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to extract entities');
+      }
+
+      const embedResponse = await fetch(`/api/supabase/functions/v1/embed-conversation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: convId }),
+        credentials: 'include',
+      });
+
+      if (!embedResponse.ok) {
+        console.warn('Embedding generation failed, but continuing...');
+      }
+
+      const matchResponse = await fetch(`/api/supabase/functions/v1/generate-matches`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: convId }),
+        credentials: 'include',
+      });
+
+      if (!matchResponse.ok) {
+        const errorData = await matchResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to generate matches');
+      }
+
+      return await matchResponse.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['matches', conversationId] });
+      toast({
+        title: "Matches regenerated!",
+        description: "The conversation has been reprocessed with the latest matching algorithm.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to regenerate matches",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleRegenerateMatches = () => {
+    if (!conversationId) return;
+    regenerateMatches.mutate(conversationId);
+  };
+
   return (
     <div className="p-4 md:p-8 overflow-auto">
       <div className="mb-6">
@@ -196,10 +259,23 @@ export default function ConversationDetail() {
               )}
             </div>
           </div>
-          <Button variant="outline" size="sm" className="w-full md:w-auto" data-testid="button-export">
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </Button>
+          <div className="flex flex-col md:flex-row gap-2 w-full md:w-auto">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="w-full md:w-auto" 
+              onClick={handleRegenerateMatches}
+              disabled={regenerateMatches.isPending}
+              data-testid="button-regenerate"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${regenerateMatches.isPending ? 'animate-spin' : ''}`} />
+              {regenerateMatches.isPending ? 'Processing...' : 'Regenerate Matches'}
+            </Button>
+            <Button variant="outline" size="sm" className="w-full md:w-auto" data-testid="button-export">
+              <Download className="w-4 h-4 mr-2" />
+              Export
+            </Button>
+          </div>
         </div>
       </div>
 
