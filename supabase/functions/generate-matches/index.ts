@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import OpenAI from 'https://esm.sh/openai@4';
+import { PerformanceMonitor } from '../_shared/monitoring.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -204,7 +205,11 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  const monitor = new PerformanceMonitor('generate-matches');
+  monitor.start('total');
+
   try {
+    monitor.start('auth');
     const authHeader = req.headers.get('Authorization')!;
     
     const supabaseUser = createClient(
@@ -222,6 +227,7 @@ Deno.serve(async (req) => {
     if (!user) {
       throw new Error('Unauthorized');
     }
+    monitor.end('auth');
 
     const { conversationId } = await req.json();
     console.log('=== GENERATE MATCHES START ===');
@@ -241,10 +247,12 @@ Deno.serve(async (req) => {
     }
     
     // Get entities
+    monitor.start('fetch-entities');
     const { data: entities } = await supabaseService
       .from('conversation_entities')
       .select('*')
       .eq('conversation_id', conversationId);
+    monitor.end('fetch-entities');
     
     console.log('=== ENTITIES RECEIVED ===');
     console.log('Total entities:', entities?.length || 0);
@@ -268,6 +276,7 @@ Deno.serve(async (req) => {
     console.log('Rich context available:', !!conversationContext?.matching_intent);
     
     // Get contacts with theses and relationship_strength (bio for AI explanations)
+    monitor.start('fetch-contacts', { userId: user.id });
     const { data: contacts } = await supabaseService
       .from('contacts')
       .select(`
@@ -277,6 +286,7 @@ Deno.serve(async (req) => {
         theses (id, sectors, stages, check_size_min, check_size_max, geos)
       `)
       .eq('owned_by_profile', user.id);
+    monitor.end('fetch-contacts');
     
     console.log('=== CONTACTS LOADED ===');
     console.log('Total contacts:', contacts?.length || 0);
@@ -309,15 +319,53 @@ Deno.serve(async (req) => {
     const maxCheckSize = parsedCheckSizes.length > 0 ? Math.max(...parsedCheckSizes) : null;
     console.log('Parsed check size range:', minCheckSize, '-', maxCheckSize);
 
-    // Weighted scoring formula (adjusted for thesis-based matching)
-    // When semantic embeddings aren't available, we redistribute weight to other factors
-    const WEIGHTS = {
-      semantic: 0.2,        // Reduced - falls back to keyword matching
-      tagOverlap: 0.35,     // Increased - thesis sector/stage matching is key
-      roleMatch: 0.15,      // Increased - investor type matching
-      geoMatch: 0.1,
-      relationship: 0.2,    // Increased - relationship strength matters
+    // Get conversation embedding if available
+    const { data: conversationData } = await supabaseService
+      .from('conversations')
+      .select('context_embedding')
+      .eq('id', conversationId)
+      .single();
+    
+    const conversationEmbedding = conversationData?.context_embedding;
+    const hasEmbeddings = conversationEmbedding && conversationEmbedding.length === 1536;
+    
+    // Weighted scoring formula with embeddings
+    // When embeddings are available, we use them for semantic matching
+    const WEIGHTS = hasEmbeddings ? {
+      embedding: 0.30,      // NEW: Semantic similarity via embeddings
+      semantic: 0.10,       // REDUCED: Keyword fallback
+      tagOverlap: 0.30,     // REDUCED: Still important
+      roleMatch: 0.10,      // REDUCED: Still relevant
+      geoMatch: 0.10,       // SAME: Geographic matching
+      relationship: 0.10,   // REDUCED: Relationship strength
+    } : {
+      semantic: 0.2,        // Original weight
+      tagOverlap: 0.35,     // Original weight
+      roleMatch: 0.15,      // Original weight
+      geoMatch: 0.1,        // Original weight
+      relationship: 0.2,    // Original weight
     };
+    
+    console.log('Embeddings available:', hasEmbeddings);
+    console.log('Using weights:', WEIGHTS);
+    
+    // Helper: Cosine similarity for embeddings
+    function cosineSimilarity(vec1: number[], vec2: number[]): number {
+      if (vec1.length !== vec2.length) return 0;
+      
+      let dotProduct = 0;
+      let norm1 = 0;
+      let norm2 = 0;
+      
+      for (let i = 0; i < vec1.length; i++) {
+        dotProduct += vec1[i] * vec2[i];
+        norm1 += vec1[i] * vec1[i];
+        norm2 += vec2[i] * vec2[i];
+      }
+      
+      const magnitude = Math.sqrt(norm1) * Math.sqrt(norm2);
+      return magnitude === 0 ? 0 : dotProduct / magnitude;
+    }
     
     // Helper: Jaccard similarity for tag overlap
     function jaccardSimilarity(set1: string[], set2: string[]): number {
@@ -357,6 +405,59 @@ Deno.serve(async (req) => {
       ...(conversationContext?.domains_and_topics?.technology_keywords || []),
     ];
     
+    // Helper: Calculate confidence scores for each component
+    function calculateConfidenceScores(
+      matchDetails: any,
+      contact: any,
+      conversationTags: string[],
+      allSearchTerms: string[]
+    ): any {
+      const confidence: any = {};
+      
+      // Semantic confidence: based on data quality and match strength
+      const hasRichProfile = (contact.bio || '').length > 50;
+      const searchTermsQuality = allSearchTerms.length > 2 ? 1.0 : 0.5;
+      confidence.semantic = matchDetails.semanticScore > 0.3 
+        ? (hasRichProfile ? 0.8 : 0.6) * searchTermsQuality
+        : 0.3;
+      
+      // Tag overlap confidence: based on tag count and match quality
+      const contactHasTheses = (contact.theses || []).length > 0;
+      const conversationHasTags = conversationTags.length > 2;
+      confidence.tagOverlap = matchDetails.tagOverlapScore > 0.2
+        ? (contactHasTheses && conversationHasTags ? 0.9 : 0.6)
+        : 0.4;
+      
+      // Role match confidence: binary confidence
+      confidence.roleMatch = matchDetails.roleMatchScore > 0.5 ? 0.9 : 0.5;
+      
+      // Geo match confidence: based on location specificity
+      const hasSpecificLocation = (contact.location || '').split(',').length > 1;
+      confidence.geoMatch = matchDetails.geoMatchScore > 0
+        ? (hasSpecificLocation ? 0.8 : 0.6)
+        : 0.5;
+      
+      // Relationship confidence: based on whether score is set
+      const hasRelationshipData = contact.relationship_strength != null && contact.relationship_strength !== 50;
+      confidence.relationship = hasRelationshipData ? 0.9 : 0.4;
+      
+      // Overall confidence: weighted average
+      confidence.overall = (
+        confidence.semantic * 0.2 +
+        confidence.tagOverlap * 0.35 +
+        confidence.roleMatch * 0.15 +
+        confidence.geoMatch * 0.1 +
+        confidence.relationship * 0.2
+      );
+      
+      // Name match boosts overall confidence significantly
+      if (matchDetails.nameMatch) {
+        confidence.overall = Math.min(confidence.overall + 0.2, 1.0);
+      }
+      
+      return confidence;
+    }
+    
     // Score each contact
     interface Match {
       contact_id: string;
@@ -376,6 +477,15 @@ Deno.serve(async (req) => {
         nameMatchScore: number;
         nameMatchType: string;
       };
+      scoreBreakdown?: {
+        semantic: number;
+        tagOverlap: number;
+        roleMatch: number;
+        geoMatch: number;
+        relationship: number;
+        nameMatch?: number;
+      };
+      confidenceScores?: any;
       contactInfo?: {
         title: string | null;
         company: string | null;
@@ -386,10 +496,12 @@ Deno.serve(async (req) => {
     const matches: Match[] = [];
     
     console.log('=== SCORING CONTACTS (Weighted Formula) ===');
+    monitor.start('scoring-contacts', { contactCount: contacts.length });
     
     for (const contact of contacts) {
       const reasons: string[] = [];
-      const matchDetails = {
+      const matchDetails: any = {
+        embeddingScore: 0,
         semanticScore: 0,
         tagOverlapScore: 0,
         roleMatchScore: 0,
@@ -433,7 +545,14 @@ Deno.serve(async (req) => {
         }
       }
       
-      // 1. SEMANTIC SIMILARITY (20% weight) - Keyword matching fallback
+      // 0. EMBEDDING SIMILARITY (30% weight when available) - Semantic matching via embeddings
+      if (hasEmbeddings && contact.bio_embedding && contact.bio_embedding.length === 1536) {
+        matchDetails.embeddingScore = cosineSimilarity(conversationEmbedding, contact.bio_embedding);
+        // Normalize to 0-1 range (cosine similarity is already -1 to 1, but typically 0-1 for similar vectors)
+        matchDetails.embeddingScore = Math.max(0, Math.min(1, matchDetails.embeddingScore));
+      }
+      
+      // 1. SEMANTIC SIMILARITY (10-20% weight) - Keyword matching fallback
       // Extract keywords from contact bio/title/investor_notes and match against conversation
       const contactText = [
         contact.bio || '',
@@ -519,12 +638,18 @@ Deno.serve(async (req) => {
       }
       
       // CALCULATE WEIGHTED SCORE (0-1 range)
-      let rawScore = 
-        WEIGHTS.semantic * matchDetails.semanticScore +
-        WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
-        WEIGHTS.roleMatch * matchDetails.roleMatchScore +
-        WEIGHTS.geoMatch * matchDetails.geoMatchScore +
-        WEIGHTS.relationship * matchDetails.relationshipScore;
+      let rawScore = hasEmbeddings
+        ? WEIGHTS.embedding * matchDetails.embeddingScore +
+          WEIGHTS.semantic * matchDetails.semanticScore +
+          WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
+          WEIGHTS.roleMatch * matchDetails.roleMatchScore +
+          WEIGHTS.geoMatch * matchDetails.geoMatchScore +
+          WEIGHTS.relationship * matchDetails.relationshipScore
+        : WEIGHTS.semantic * matchDetails.semanticScore +
+          WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
+          WEIGHTS.roleMatch * matchDetails.roleMatchScore +
+          WEIGHTS.geoMatch * matchDetails.geoMatchScore +
+          WEIGHTS.relationship * matchDetails.relationshipScore;
       
       // NAME MATCH BOOST - Add 0.3 to raw score for name mentions
       if (matchDetails.nameMatch) {
@@ -556,6 +681,31 @@ Deno.serve(async (req) => {
           ? `${contact.name}: ${reasons.join('; ')}`
           : `${contact.name} is a potential match.`;
         
+        // Calculate confidence scores for transparency
+        const confidenceScores = calculateConfidenceScores(
+          matchDetails,
+          contact,
+          conversationTags,
+          allSearchTerms
+        );
+        
+        // Build score breakdown for UI display
+        const scoreBreakdown: any = {
+          semantic: matchDetails.semanticScore,
+          tagOverlap: matchDetails.tagOverlapScore,
+          roleMatch: matchDetails.roleMatchScore,
+          geoMatch: matchDetails.geoMatchScore,
+          relationship: matchDetails.relationshipScore,
+        };
+        
+        if (hasEmbeddings) {
+          scoreBreakdown.embedding = matchDetails.embeddingScore;
+        }
+        
+        if (matchDetails.nameMatch) {
+          scoreBreakdown.nameMatch = matchDetails.nameMatchScore;
+        }
+        
         matches.push({
           contact_id: contact.id,
           contact_name: contact.name,
@@ -564,6 +714,8 @@ Deno.serve(async (req) => {
           reasons,
           justification,
           matchDetails,
+          scoreBreakdown,
+          confidenceScores,
           contactInfo: {
             title: contact.title,
             company: contact.company,
@@ -571,9 +723,11 @@ Deno.serve(async (req) => {
           },
         });
         
-        console.log(`MATCH: ${contact.name} (${starScore}★, raw: ${rawScore.toFixed(3)})`);
+        console.log(`MATCH: ${contact.name} (${starScore}★, raw: ${rawScore.toFixed(3)}, conf: ${confidenceScores.overall.toFixed(2)})`);
       }
     }
+    
+    monitor.end('scoring-contacts');
     
     // Sort by star score (highest first), then by raw score for finer ranking
     matches.sort((a, b) => {
@@ -602,6 +756,7 @@ Deno.serve(async (req) => {
     // Generate AI explanations for top 5 matches (3-star and 2-star only)
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
     if (openaiKey) {
+      monitor.start('ai-explanations');
       const openai = new OpenAI({ apiKey: openaiKey });
       const matchesToExplain = topMatches.filter(m => m.score >= 2).slice(0, 5);
       
@@ -652,9 +807,11 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
           console.error(`Failed to generate AI explanation for ${match.contact_name}:`, aiError);
         }
       }
+      monitor.end('ai-explanations');
     }
     
     // Upsert matches to database
+    monitor.start('database-upsert', { matchCount: topMatches.length });
     const insertedMatches: any[] = [];
     for (const match of topMatches) {
       const upsertData: any = {
@@ -664,6 +821,9 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
         reasons: match.reasons,
         justification: match.justification,
         status: 'pending',
+        score_breakdown: match.scoreBreakdown || {},
+        confidence_scores: match.confidenceScores || {},
+        match_version: 'v1.1-transparency',
       };
       
       // Add AI explanation if available
@@ -679,6 +839,7 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
         })
         .select(`
           id, conversation_id, contact_id, score, reasons, justification, ai_explanation, status, created_at,
+          score_breakdown, confidence_scores, match_version,
           contacts:contact_id ( name )
         `)
         .single();
@@ -690,6 +851,8 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
       }
     }
     
+    monitor.end('database-upsert');
+    
     console.log('=== DATABASE UPSERT ===');
     console.log('Matches saved:', insertedMatches.length);
     
@@ -698,13 +861,22 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
       contact_name: m.contacts?.name ?? null
     }));
     
+    monitor.end('total', true);
+    monitor.logSummary();
+    
     console.log('=== GENERATE MATCHES END ===');
     
     return new Response(
-      JSON.stringify({ matches: matchesWithNames }),
+      JSON.stringify({ 
+        matches: matchesWithNames,
+        performance: monitor.getSummary()
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
+    monitor.end('total', false, error.message || String(error));
+    monitor.logSummary();
+    
     console.error('=== GENERATE MATCHES ERROR ===');
     console.error('Error:', error);
     return new Response(

@@ -199,6 +199,9 @@ export const matchSuggestions = pgTable("match_suggestions", {
   status: text("status").notNull().default('pending'), // 'pending' | 'promised' | 'intro_made' | 'dismissed' | 'maybe'
   promiseStatus: text("promise_status").default('general'), // 'general' | 'promised'
   promisedAt: timestamp("promised_at"),
+  scoreBreakdown: jsonb("score_breakdown").default(sql`'{}'::jsonb`), // Individual component scores
+  confidenceScores: jsonb("confidence_scores").default(sql`'{}'::jsonb`), // Confidence per component
+  matchVersion: text("match_version").default('v1.0'), // Algorithm version
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
