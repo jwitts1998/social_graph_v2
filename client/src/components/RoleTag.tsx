@@ -45,6 +45,12 @@ export default function RoleTag({ type, className }: RoleTagProps) {
 
   const config = ROLE_CONFIG[type];
   
+  // Handle invalid/legacy types gracefully
+  if (!config) {
+    console.warn(`Invalid contact type: ${type}`);
+    return null;
+  }
+  
   return (
     <Badge
       variant="outline"
