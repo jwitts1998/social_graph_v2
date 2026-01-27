@@ -10,7 +10,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Home, Users, History, Settings } from "lucide-react";
+import { Home, Users, History, Settings, Calendar } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 const menuItems = [
@@ -18,6 +18,11 @@ const menuItems = [
     title: "Home",
     url: "/",
     icon: Home,
+  },
+  {
+    title: "Meetings",
+    url: "/meetings",
+    icon: Calendar,
   },
   {
     title: "Contacts",

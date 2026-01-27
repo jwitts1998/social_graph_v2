@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -10,10 +10,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { enrichContact } from "@/lib/edgeFunctions";
-import { useUpdateContact } from "@/hooks/useContacts";
+import { researchContact } from "@/lib/edgeFunctions";
+import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, AlertCircle, Globe, Search } from "lucide-react";
 
 interface EnrichmentDialogProps {
   contactId: string;
@@ -30,157 +30,72 @@ export default function EnrichmentDialog({
   onOpenChange,
   provider = 'auto',
 }: EnrichmentDialogProps) {
-  const [enrichedData, setEnrichedData] = useState<any>(null);
-  const [originalData, setOriginalData] = useState<any>(null);
+  console.log('[EnrichmentDialog] Rendering - open:', open, 'contactName:', contactName);
+  
+  const [result, setResult] = useState<any>(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const updateContact = useUpdateContact();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Trigger enrichment when dialog opens
+  useEffect(() => {
+    if (open && !result && !isEnriching) {
+      console.log('[EnrichmentDialog] Dialog opened via useEffect, triggering enrichment...');
+      handleEnrich();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const handleEnrich = async () => {
+    console.log('[EnrichmentDialog] Starting enrichment for contact:', contactId, contactName);
     setIsEnriching(true);
     setError(null);
     try {
-      const result = await enrichContact(contactId, provider);
-      setEnrichedData(result.data);
-      setOriginalData(result.original);
+      console.log('[EnrichmentDialog] Calling researchContact...');
+      const data = await researchContact(contactId);
+      console.log('[EnrichmentDialog] Research complete:', data);
+      setResult(data);
+      
+      // Invalidate contact cache to refetch updated data
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['contact', contactId] });
+      
+      // Show success toast
+      if (data.updated && data.fields.length > 0) {
+        toast({
+          title: "Contact enriched! ✨",
+          description: `Updated: ${data.fields.join(', ')}`,
+        });
+      } else {
+        toast({
+          title: "Contact already up to date",
+          description: "No new information found",
+        });
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to enrich contact');
       console.error('Enrichment error:', err);
+      toast({
+        title: "Enrichment failed",
+        description: err.message || 'Failed to research contact',
+        variant: "destructive",
+      });
     } finally {
       setIsEnriching(false);
     }
   };
 
-  const handleSave = async () => {
-    if (!enrichedData || !originalData) return;
-    
-    // Only update fields that have truthy enriched values
-    const updates: any = { id: contactId };
-    
-    // Personal information
-    if (enrichedData.firstName && enrichedData.firstName !== originalData.firstName) {
-      updates.firstName = enrichedData.firstName;
-    }
-    if (enrichedData.lastName && enrichedData.lastName !== originalData.lastName) {
-      updates.lastName = enrichedData.lastName;
-    }
-    
-    // Update canonical name field when firstName or lastName change
-    if (updates.firstName || updates.lastName) {
-      const firstName = updates.firstName || originalData.firstName || '';
-      const lastName = updates.lastName || originalData.lastName || '';
-      updates.name = `${firstName} ${lastName}`.trim();
-    }
-    if (enrichedData.email && enrichedData.email !== originalData.email) {
-      updates.email = enrichedData.email;
-    }
-    if (enrichedData.linkedinUrl && enrichedData.linkedinUrl !== originalData.linkedinUrl) {
-      updates.linkedinUrl = enrichedData.linkedinUrl;
-    }
-    if (enrichedData.title && enrichedData.title !== originalData.title) {
-      updates.title = enrichedData.title;
-    }
-    if (enrichedData.company && enrichedData.company !== originalData.company) {
-      updates.company = enrichedData.company;
-    }
-    if (enrichedData.location && enrichedData.location !== originalData.location) {
-      updates.location = enrichedData.location;
-    }
-    if (enrichedData.phone && enrichedData.phone !== originalData.phone) {
-      updates.phone = enrichedData.phone;
-    }
-    if (enrichedData.bio && enrichedData.bio !== originalData.bio) {
-      updates.bio = enrichedData.bio;
-    }
-    if (enrichedData.twitter && enrichedData.twitter !== originalData.twitter) {
-      updates.twitter = enrichedData.twitter;
-    }
-    
-    // Company information
-    if (enrichedData.companyUrl && enrichedData.companyUrl !== originalData.companyUrl) {
-      updates.companyUrl = enrichedData.companyUrl;
-    }
-    if (enrichedData.companyAddress && enrichedData.companyAddress !== originalData.companyAddress) {
-      updates.companyAddress = enrichedData.companyAddress;
-    }
-    if (enrichedData.companyEmployees && enrichedData.companyEmployees !== originalData.companyEmployees) {
-      updates.companyEmployees = enrichedData.companyEmployees;
-    }
-    if (enrichedData.companyFounded && enrichedData.companyFounded !== originalData.companyFounded) {
-      updates.companyFounded = enrichedData.companyFounded;
-    }
-    if (enrichedData.companyLinkedin && enrichedData.companyLinkedin !== originalData.companyLinkedin) {
-      updates.companyLinkedin = enrichedData.companyLinkedin;
-    }
-    if (enrichedData.companyTwitter && enrichedData.companyTwitter !== originalData.companyTwitter) {
-      updates.companyTwitter = enrichedData.companyTwitter;
-    }
-    if (enrichedData.companyFacebook && enrichedData.companyFacebook !== originalData.companyFacebook) {
-      updates.companyFacebook = enrichedData.companyFacebook;
-    }
-    
-    // Don't update if no changes
-    if (Object.keys(updates).length === 1) {
-      toast({
-        title: "No changes to save",
-        description: "The enriched data matches existing contact information",
-      });
-      return;
-    }
-    
-    try {
-      await updateContact.mutateAsync(updates);
-      
-      toast({
-        title: "Contact enriched!",
-        description: `${contactName} has been updated with new information from ${enrichedData.source}`,
-      });
-      
-      onOpenChange(false);
-      setEnrichedData(null);
-      setOriginalData(null);
-    } catch (err: any) {
-      toast({
-        title: "Failed to save",
-        description: err.message,
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleOpenChange = (newOpen: boolean) => {
-    if (newOpen && !enrichedData) {
-      handleEnrich();
-    }
+    console.log('[EnrichmentDialog] Dialog state change requested:', newOpen, 'for contact:', contactName);
     onOpenChange(newOpen);
     if (!newOpen) {
-      setEnrichedData(null);
-      setOriginalData(null);
+      console.log('[EnrichmentDialog] Clearing results...');
+      setResult(null);
       setError(null);
     }
   };
-
-  const hasChanges = enrichedData && originalData && (
-    (enrichedData.firstName && enrichedData.firstName !== originalData.firstName) ||
-    (enrichedData.lastName && enrichedData.lastName !== originalData.lastName) ||
-    (enrichedData.email && enrichedData.email !== originalData.email) ||
-    (enrichedData.linkedinUrl && enrichedData.linkedinUrl !== originalData.linkedinUrl) ||
-    (enrichedData.title && enrichedData.title !== originalData.title) ||
-    (enrichedData.company && enrichedData.company !== originalData.company) ||
-    (enrichedData.location && enrichedData.location !== originalData.location) ||
-    (enrichedData.phone && enrichedData.phone !== originalData.phone) ||
-    (enrichedData.bio && enrichedData.bio !== originalData.bio) ||
-    (enrichedData.twitter && enrichedData.twitter !== originalData.twitter) ||
-    (enrichedData.companyUrl && enrichedData.companyUrl !== originalData.companyUrl) ||
-    (enrichedData.companyAddress && enrichedData.companyAddress !== originalData.companyAddress) ||
-    (enrichedData.companyEmployees && enrichedData.companyEmployees !== originalData.companyEmployees) ||
-    (enrichedData.companyFounded && enrichedData.companyFounded !== originalData.companyFounded) ||
-    (enrichedData.companyLinkedin && enrichedData.companyLinkedin !== originalData.companyLinkedin) ||
-    (enrichedData.companyTwitter && enrichedData.companyTwitter !== originalData.companyTwitter) ||
-    (enrichedData.companyFacebook && enrichedData.companyFacebook !== originalData.companyFacebook)
-  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -190,16 +105,39 @@ export default function EnrichmentDialog({
             <Sparkles className="w-5 h-5 text-primary" />
             Enrich Contact: {contactName}
           </DialogTitle>
-          <DialogDescription>
-            We'll search for additional information about this contact using {provider === 'auto' ? 'available data sources' : provider === 'hunter' ? 'Hunter.io' : 'People Data Labs'}
+          <DialogDescription className="flex items-center gap-2">
+            <Globe className="w-4 h-4" />
+            Searching the web with AI-powered research (Google + ChatGPT)
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4">
           {isEnriching && (
             <div className="flex flex-col items-center justify-center py-12 gap-4">
-              <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              <p className="text-sm text-muted-foreground">Searching for contact information...</p>
+              <div className="relative">
+                <Loader2 className="w-12 h-12 animate-spin text-primary" />
+                <Search className="w-5 h-5 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary" />
+              </div>
+              <div className="text-center space-y-3">
+                <p className="text-sm font-medium">Researching {contactName}...</p>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
+                    Searching Google for LinkedIn, Crunchbase, company websites
+                  </p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-200"></span>
+                    Extracting bio, education, career history
+                  </p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-400"></span>
+                    Finding personal interests and expertise areas
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground pt-2">
+                  This may take 10-15 seconds...
+                </p>
+              </div>
             </div>
           )}
 
@@ -207,134 +145,83 @@ export default function EnrichmentDialog({
             <div className="flex items-start gap-3 p-4 rounded-lg border border-destructive/50 bg-destructive/10">
               <AlertCircle className="w-5 h-5 text-destructive mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-destructive">Enrichment Failed</p>
+                <p className="text-sm font-medium text-destructive">Research Failed</p>
                 <p className="text-sm text-muted-foreground mt-1">{error}</p>
               </div>
             </div>
           )}
 
-          {enrichedData && !isEnriching && (
+          {result && !isEnriching && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-green-600" />
-                  <span className="text-sm font-medium">Found new information</span>
+                  <span className="text-sm font-medium">
+                    {result.updated ? 'Contact updated!' : 'Contact already up to date'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">
-                    {enrichedData.source === 'hunter' ? 'Hunter.io' : 'People Data Labs'}
+                  <Badge variant="outline" className="text-xs flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    Web Search
                   </Badge>
-                  <Badge variant="outline" className="text-xs">
-                    {enrichedData.confidence}% confidence
-                  </Badge>
+                  {result.bioFound && (
+                    <Badge variant="secondary" className="text-xs">
+                      Bio found
+                    </Badge>
+                  )}
+                  {result.thesisFound && (
+                    <Badge variant="secondary" className="text-xs">
+                      Thesis found
+                    </Badge>
+                  )}
                 </div>
               </div>
 
               <Separator />
 
-              {/* Personal Information Section */}
-              <div className="space-y-3">
-                <p className="text-sm font-semibold">Personal Information</p>
-                {[
-                  { label: 'First Name', original: originalData?.firstName, enriched: enrichedData.firstName },
-                  { label: 'Last Name', original: originalData?.lastName, enriched: enrichedData.lastName },
-                  { label: 'Email', original: originalData?.email, enriched: enrichedData.email },
-                  { label: 'Title', original: originalData?.title, enriched: enrichedData.title },
-                  { label: 'Company', original: originalData?.company, enriched: enrichedData.company },
-                  { label: 'LinkedIn', original: originalData?.linkedinUrl, enriched: enrichedData.linkedinUrl },
-                  { label: 'Location', original: originalData?.location, enriched: enrichedData.location },
-                  { label: 'Phone', original: originalData?.phone, enriched: enrichedData.phone },
-                  { label: 'Twitter', original: originalData?.twitter, enriched: enrichedData.twitter },
-                  { label: 'Bio', original: originalData?.bio, enriched: enrichedData.bio, truncate: true },
-                ].map((field) => {
-                  const hasChange = field.original !== field.enriched && field.enriched;
-                  if (!hasChange && !field.enriched) return null;
-                  
-                  return (
-                    <div key={field.label} className="grid grid-cols-3 gap-4 text-sm">
-                      <div className="font-medium text-muted-foreground">{field.label}</div>
-                      <div className="col-span-2">
-                        {hasChange ? (
-                          <div className="space-y-1">
-                            <div className="text-muted-foreground line-through">
-                              {field.truncate && field.original 
-                                ? field.original.substring(0, 50) + (field.original.length > 50 ? '...' : '')
-                                : field.original || 'Not set'}
-                            </div>
-                            <div className="text-green-600 font-medium">
-                              {field.truncate && field.enriched 
-                                ? field.enriched.substring(0, 50) + (field.enriched.length > 50 ? '...' : '')
-                                : field.enriched}
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            {field.truncate && field.enriched 
-                              ? field.enriched.substring(0, 50) + (field.enriched.length > 50 ? '...' : '')
-                              : field.enriched}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Company Information Section */}
-              {(enrichedData.companyUrl || enrichedData.companyAddress || enrichedData.companyEmployees || 
-                enrichedData.companyFounded || enrichedData.companyLinkedin || enrichedData.companyTwitter || 
-                enrichedData.companyFacebook) && (
-                <>
-                  <Separator />
-                  <div className="space-y-3">
-                    <p className="text-sm font-semibold">Company Information</p>
-                    {[
-                      { label: 'Company Website', original: originalData?.companyUrl, enriched: enrichedData.companyUrl },
-                      { label: 'Company Address', original: originalData?.companyAddress, enriched: enrichedData.companyAddress },
-                      { label: 'Company Size', original: originalData?.companyEmployees, enriched: enrichedData.companyEmployees },
-                      { label: 'Founded', original: originalData?.companyFounded, enriched: enrichedData.companyFounded },
-                      { label: 'Company LinkedIn', original: originalData?.companyLinkedin, enriched: enrichedData.companyLinkedin },
-                      { label: 'Company Twitter', original: originalData?.companyTwitter, enriched: enrichedData.companyTwitter },
-                      { label: 'Company Facebook', original: originalData?.companyFacebook, enriched: enrichedData.companyFacebook },
-                    ].map((field) => {
-                      const hasChange = field.original !== field.enriched && field.enriched;
-                      if (!hasChange && !field.enriched) return null;
-                      
-                      return (
-                        <div key={field.label} className="grid grid-cols-3 gap-4 text-sm">
-                          <div className="font-medium text-muted-foreground">{field.label}</div>
-                          <div className="col-span-2">
-                            {hasChange ? (
-                              <div className="space-y-1">
-                                <div className="text-muted-foreground line-through">{field.original || 'Not set'}</div>
-                                <div className="text-green-600 font-medium">{field.enriched}</div>
-                              </div>
-                            ) : (
-                              <div>{field.enriched}</div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </>
-              )}
-
-              {enrichedData.extra && (
-                <>
-                  <Separator />
+              {result.updated && result.fields.length > 0 ? (
+                <div className="space-y-3">
+                  <p className="text-sm font-semibold">Updated Fields</p>
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Additional Information</p>
-                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      {enrichedData.extra.industry && (
-                        <div>Industry: {enrichedData.extra.industry}</div>
-                      )}
-                      {enrichedData.extra.companySize && (
-                        <div>Company Size: {enrichedData.extra.companySize}</div>
-                      )}
-                    </div>
+                    {result.fields.map((field: string) => (
+                      <div key={field} className="flex items-center gap-2 text-sm">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        <span className="capitalize">{field.replace(/_/g, ' ')}</span>
+                      </div>
+                    ))}
                   </div>
-                </>
+                  
+                  <Separator />
+                  
+                  <div className="p-3 bg-muted rounded-lg space-y-2">
+                    <p className="text-xs font-medium">What was updated?</p>
+                    <ul className="text-xs text-muted-foreground space-y-1">
+                      {result.bioFound && (
+                        <li>• Professional bio from web sources</li>
+                      )}
+                      {result.thesisFound && (
+                        <li>• Investment thesis and preferences</li>
+                      )}
+                      {result.fields.includes('linkedin_url') && (
+                        <li>• LinkedIn profile URL</li>
+                      )}
+                      {result.fields.includes('location') && (
+                        <li>• Location/geographic information</li>
+                      )}
+                      {(result.fields.some((f: string) => f.includes('education') || f.includes('career') || f.includes('portfolio'))) && (
+                        <li>• Enhanced profile data (education, career, portfolio)</li>
+                      )}
+                    </ul>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p className="text-sm">No new information found.</p>
+                  <p className="text-xs mt-2">
+                    The contact profile is already complete or public data is limited.
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -342,36 +229,11 @@ export default function EnrichmentDialog({
 
         <DialogFooter>
           <Button
-            variant="outline"
             onClick={() => handleOpenChange(false)}
-            data-testid="button-cancel-enrichment"
+            data-testid="button-close-enrichment"
           >
-            Cancel
+            {result?.updated ? 'Done' : 'Close'}
           </Button>
-          {enrichedData && hasChanges && (
-            <Button
-              onClick={handleSave}
-              disabled={updateContact.isPending}
-              data-testid="button-save-enrichment"
-            >
-              {updateContact.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  Save Changes
-                </>
-              )}
-            </Button>
-          )}
-          {enrichedData && !hasChanges && (
-            <Button variant="secondary" onClick={() => handleOpenChange(false)}>
-              No Changes to Save
-            </Button>
-          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

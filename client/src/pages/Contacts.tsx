@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import ContactCard from "@/components/ContactCard";
 import ContactDialog from "@/components/ContactDialog";
 import CsvUploadDialog from "@/components/CsvUploadDialog";
+import EnrichmentDialog from "@/components/EnrichmentDialog";
 import { Plus, Search, Upload, Users } from "lucide-react";
 import { useContacts, useContactsCount } from "@/hooks/useContacts";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +15,9 @@ export default function Contacts() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [showCsvUploadDialog, setShowCsvUploadDialog] = useState(false);
+  const [showEnrichmentDialog, setShowEnrichmentDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<any>(null);
+  const [enrichingContact, setEnrichingContact] = useState<{ id: string; name: string } | null>(null);
   const CONTACTS_PER_PAGE = 50;
   
   const { data: contacts, isLoading } = useContacts();
@@ -189,6 +192,10 @@ export default function Contacts() {
                   setEditingContact(contact);
                   setShowContactDialog(true);
                 }}
+                onEnrich={() => {
+                  setEnrichingContact({ id: contact.id, name: contact.name });
+                  setShowEnrichmentDialog(true);
+                }}
               />
             ))}
           </div>
@@ -236,6 +243,20 @@ export default function Contacts() {
         open={showCsvUploadDialog}
         onOpenChange={setShowCsvUploadDialog}
       />
+      
+      {enrichingContact && (
+        <EnrichmentDialog
+          contactId={enrichingContact.id}
+          contactName={enrichingContact.name}
+          open={showEnrichmentDialog}
+          onOpenChange={(open) => {
+            setShowEnrichmentDialog(open);
+            if (!open) {
+              setEnrichingContact(null);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -22,6 +22,9 @@ import Signup from "@/pages/Signup";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
 import PendingContacts from "@/pages/PendingContacts";
+import TestAuth from "@/pages/TestAuth";
+import UpcomingMeetings from "@/pages/UpcomingMeetings";
+import MeetingPrep from "@/pages/MeetingPrep";
 import { useEffect } from "react";
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -52,6 +55,7 @@ function Router() {
       <Route path="/signup" component={Signup} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/test-auth" component={TestAuth} />
       <Route path="/">
         {() => <ProtectedRoute component={Home} />}
       </Route>
@@ -76,6 +80,12 @@ function Router() {
       </Route>
       <Route path="/pending">
         {() => <ProtectedRoute component={PendingContacts} />}
+      </Route>
+      <Route path="/meetings">
+        {() => <ProtectedRoute component={UpcomingMeetings} />}
+      </Route>
+      <Route path="/meetings/:id">
+        {() => <ProtectedRoute component={MeetingPrep} />}
       </Route>
       <Route component={NotFound} />
     </Switch>
@@ -115,7 +125,7 @@ function AppContent() {
   const { user } = useAuth();
   const [location] = useLocation();
 
-  const isAuthPage = location === "/login" || location === "/signup" || location === "/forgot-password" || location === "/reset-password";
+  const isAuthPage = location === "/login" || location === "/signup" || location === "/forgot-password" || location === "/reset-password" || location === "/test-auth";
 
   if (isAuthPage || !user) {
     return <Router />;

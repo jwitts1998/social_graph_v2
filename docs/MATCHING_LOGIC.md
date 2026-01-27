@@ -109,31 +109,59 @@ function normalizeLinkedInUrl(url: string): string {
 
 This system matches contacts from the user's network against conversation content to suggest potential introductions.
 
-### Weighted Scoring Algorithm
+### Weighted Scoring Algorithm (v1.1-transparency)
 
-The algorithm uses a weighted combination of multiple scoring factors:
+The algorithm uses **adaptive weights** that change based on data availability:
+
+#### With Embeddings Available (Preferred - v1.1)
+When conversation and contact embeddings exist, the system uses semantic AI matching:
 
 ```javascript
 const WEIGHTS = {
-  semantic: 0.20,      // Keyword matching from bio/title/notes
-  tagOverlap: 0.35,    // Jaccard similarity on sectors/stages/geos
-  roleMatch: 0.15,     // Investor type matching
-  geoMatch: 0.10,      // Location overlap
-  relationship: 0.20,  // Existing relationship strength score
+  embedding: 0.30,     // NEW: Deep semantic similarity via OpenAI embeddings
+  semantic: 0.10,      // REDUCED: Keyword fallback
+  tagOverlap: 0.30,    // REDUCED: Still important for thesis matching
+  roleMatch: 0.10,     // REDUCED: Investor/role type matching
+  geoMatch: 0.10,      // SAME: Location overlap
+  relationship: 0.10,  // REDUCED: Existing relationship strength
 };
 ```
+
+#### Without Embeddings (Fallback - v1.0)
+When embeddings are unavailable (missing `OPENAI_API_KEY`), falls back to keyword matching:
+
+```javascript
+const WEIGHTS = {
+  semantic: 0.20,      // Original: Keyword matching from bio/title/notes
+  tagOverlap: 0.35,    // Original: Jaccard similarity on sectors/stages/geos
+  roleMatch: 0.15,     // Original: Investor type matching
+  geoMatch: 0.10,      // Original: Location overlap
+  relationship: 0.20,  // Original: Existing relationship strength score
+};
+```
+
+**Key Improvement**: Embedding-based matching captures semantic meaning, not just keywords. For example:
+- "AI-powered drug discovery" matches "therapeutics platform" (semantic)
+- vs. only matching exact keyword "drug discovery" (keyword)
 
 ### Score Calculation
 
 ```javascript
-let rawScore = 
-  WEIGHTS.semantic * matchDetails.semanticScore +
-  WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
-  WEIGHTS.roleMatch * matchDetails.roleMatchScore +
-  WEIGHTS.geoMatch * matchDetails.geoMatchScore +
-  WEIGHTS.relationship * matchDetails.relationshipScore;
+// Adaptive calculation based on embedding availability
+let rawScore = hasEmbeddings
+  ? WEIGHTS.embedding * matchDetails.embeddingScore +
+    WEIGHTS.semantic * matchDetails.semanticScore +
+    WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
+    WEIGHTS.roleMatch * matchDetails.roleMatchScore +
+    WEIGHTS.geoMatch * matchDetails.geoMatchScore +
+    WEIGHTS.relationship * matchDetails.relationshipScore
+  : WEIGHTS.semantic * matchDetails.semanticScore +
+    WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
+    WEIGHTS.roleMatch * matchDetails.roleMatchScore +
+    WEIGHTS.geoMatch * matchDetails.geoMatchScore +
+    WEIGHTS.relationship * matchDetails.relationshipScore;
 
-// NAME MATCH BOOST - Add 0.3 to raw score for name mentions
+// NAME MATCH BOOST - Add up to 0.3 to raw score for name mentions
 if (matchDetails.nameMatch) {
   rawScore += 0.3 * matchDetails.nameMatchScore;
 }
@@ -162,9 +190,46 @@ if (starScore >= 1) {
 
 ### Individual Scoring Components
 
-#### 2.1 Semantic Score (20% weight)
+#### 2.0 Embedding Score (30% weight - v1.1 only)
 
-Keyword matching between conversation entities and contact profile text:
+**NEW in v1.1-transparency**: Deep semantic similarity using OpenAI text-embedding-3-small (1536 dimensions).
+
+```javascript
+// Generate embeddings for conversation context and contact bios
+const conversationEmbedding = await generateEmbedding(conversationContext);
+const contactEmbedding = contact.bio_embedding; // pre-computed
+
+// Calculate cosine similarity
+function cosineSimilarity(vec1, vec2) {
+  let dotProduct = 0, norm1 = 0, norm2 = 0;
+  
+  for (let i = 0; i < vec1.length; i++) {
+    dotProduct += vec1[i] * vec2[i];
+    norm1 += vec1[i] * vec1[i];
+    norm2 += vec2[i] * vec2[i];
+  }
+  
+  return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+}
+
+matchDetails.embeddingScore = cosineSimilarity(
+  conversationEmbedding, 
+  contactEmbedding
+);
+```
+
+**When embeddings are available**:
+- Captures semantic meaning beyond keywords
+- "AI drug discovery" matches "therapeutics platform" 
+- Higher quality matches with better precision
+
+**When embeddings are not available**:
+- Falls back to keyword matching (semantic score)
+- System continues to work with degraded quality
+
+#### 2.1 Semantic Score (10-20% weight)
+
+Keyword matching between conversation entities and contact profile text (fallback when embeddings unavailable):
 
 ```javascript
 const contactText = [

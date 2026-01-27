@@ -416,8 +416,8 @@ else if (rawScore >= 0.05) starScore = 1;
 - relationship_strength: INTEGER (0-100, nullable)
 - check_size_min: INTEGER
 - check_size_max: INTEGER
-- bio_embedding: VECTOR (future use)
-- thesis_embedding: VECTOR (future use)
+  - bio_embedding: VECTOR (active implementation)
+  - thesis_embedding: VECTOR (active implementation)
 ```
 
 **theses** (investment theses for contacts)

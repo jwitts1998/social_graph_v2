@@ -1,9 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 
-type ContactType = 'LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE';
+type ContactType = 'LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE' | 'Other';
 
 interface RoleTagProps {
-  type: ContactType | null | undefined;
+  type: ContactType | string | null | undefined;
   className?: string;
 }
 
@@ -38,16 +38,20 @@ const ROLE_CONFIG: Record<ContactType, { label: string; color: string; bgColor: 
     color: '#6B7280', // gray-500
     bgColor: 'rgba(107, 114, 128, 0.1)',
   },
+  Other: {
+    label: 'Other',
+    color: '#9CA3AF', // gray-400
+    bgColor: 'rgba(156, 163, 175, 0.1)',
+  },
 };
 
 export default function RoleTag({ type, className }: RoleTagProps) {
   if (!type) return null;
 
-  const config = ROLE_CONFIG[type];
+  const config = ROLE_CONFIG[type as ContactType];
   
-  // Handle invalid/legacy types gracefully
+  // Handle invalid/legacy types gracefully - just don't render
   if (!config) {
-    console.warn(`Invalid contact type: ${type}`);
     return null;
   }
   

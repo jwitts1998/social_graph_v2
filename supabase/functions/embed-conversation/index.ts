@@ -133,6 +133,8 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     
+    console.log('Service client configured with SUPABASE_SERVICE_ROLE_KEY');
+    
     const { data: { user } } = await supabaseUser.auth.getUser();
     if (!user) {
       throw new Error('Unauthorized');
@@ -183,13 +185,17 @@ Deno.serve(async (req) => {
     
     console.log('Generated embedding with', embedding.length, 'dimensions');
     
-    // Store embedding in conversation
-    const { error: updateError } = await supabaseService
-      .from('conversations')
-      .update({ context_embedding: embedding })
-      .eq('id', conversationId);
+    // Store embedding using PostgreSQL function to bypass schema cache
+    // Convert array to pgvector format: '[0.1, 0.2, ..., 0.n]'
+    const vectorString = `[${embedding.join(',')}]`;
+    
+    const { error: updateError } = await supabaseService.rpc('update_conversation_embedding', {
+      p_conversation_id: conversationId,
+      p_embedding: vectorString
+    });
     
     if (updateError) {
+      console.error('Update error details:', updateError);
       throw new Error(`Failed to store embedding: ${updateError.message}`);
     }
     

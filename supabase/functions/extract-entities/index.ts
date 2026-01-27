@@ -109,41 +109,53 @@ Deno.serve(async (req) => {
     
     const supabaseService = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     
     const { data: { user } } = await supabaseUser.auth.getUser();
+    console.log('[AUTH] User authenticated:', user ? user.id : 'NO USER');
     if (!user) {
       throw new Error('Unauthorized');
     }
 
     const { conversationId } = await req.json();
-    console.log('Received conversationId:', conversationId);
+    console.log('[REQUEST] Received conversationId:', conversationId);
     
-    const { data: conversation } = await supabaseUser
+    const { data: conversation, error: convError } = await supabaseUser
       .from('conversations')
       .select('owned_by_profile')
       .eq('id', conversationId)
       .single();
 
+    console.log('[CONVERSATION] Query result:', { conversation, error: convError, userId: user.id });
+
     if (!conversation || conversation.owned_by_profile !== user.id) {
+      console.log('[CONVERSATION] Forbidden: conversation owned by', conversation?.owned_by_profile, 'but user is', user.id);
       return new Response(
         JSON.stringify({ error: 'Forbidden: You do not own this conversation' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     
-    const { data: segments } = await supabaseService
+    console.log('[SEGMENTS] Querying with SERVICE_ROLE for conversation:', conversationId);
+    const { data: segments, error: segError } = await supabaseService
       .from('conversation_segments')
       .select('*')
       .eq('conversation_id', conversationId)
       .order('timestamp_ms');
     
+    console.log('[SEGMENTS] Query result:', { count: segments?.length || 0, error: segError });
+    
     if (!segments || segments.length === 0) {
-      console.log('No conversation segments found');
+      console.log('[SEGMENTS] ERROR: No conversation segments found for ID:', conversationId);
+      console.log('[SEGMENTS] This should not happen if segments exist in database!');
       return new Response(
-        JSON.stringify({ entities: [], richContext: null }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          error: 'No conversation segments found',
+          conversationId,
+          debug: { segmentsNull: segments === null, segmentsEmpty: segments?.length === 0 }
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -207,9 +219,16 @@ Deno.serve(async (req) => {
       parsedResponse = JSON.parse(content.trim());
     } catch (parseError) {
       console.error('Failed to parse OpenAI response as JSON:', content);
+      console.error('Parse error details:', parseError);
+      console.error('Raw content length:', content.length);
+      console.error('First 500 chars:', content.substring(0, 500));
       return new Response(
-        JSON.stringify({ entities: [], richContext: null }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ 
+          error: 'Failed to parse OpenAI JSON response',
+          details: parseError.message,
+          preview: content.substring(0, 200)
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     

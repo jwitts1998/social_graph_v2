@@ -16,6 +16,7 @@ import { useMatchSuggestions, useUpdateMatchStatus } from "@/hooks/useMatches";
 import { useProfile } from "@/hooks/useProfile";
 import { format } from "date-fns";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
 
 interface PromisedIntro {
   id: string;
@@ -28,7 +29,9 @@ export default function ConversationDetail() {
   const [, params] = useRoute("/conversation/:id");
   const conversationId = params?.id || '';
   
+  // Call ALL hooks unconditionally at the top
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [promisedIntros, setPromisedIntros] = useState<Record<string, PromisedIntro[]>>({});
   const [emailDrawerOpen, setEmailDrawerOpen] = useState(false);
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
@@ -39,7 +42,73 @@ export default function ConversationDetail() {
   const { data: matches = [], isLoading: matchesLoading } = useMatchSuggestions(conversationId);
   const { data: profile } = useProfile();
   const updateStatus = useUpdateMatchStatus(conversationId);
-  const queryClient = useQueryClient();
+
+  // Define regenerateMatches mutation at the top with all other hooks
+  const regenerateMatches = useMutation({
+    mutationFn: async (convId: string) => {
+      // Get the user's auth token from Supabase
+      const { data: { session } } = await supabase.auth.getSession();
+      const authToken = session?.access_token;
+
+      if (!authToken) {
+        throw new Error('Not authenticated');
+      }
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${authToken}`,
+      };
+
+      const response = await fetch(`/api/supabase/functions/v1/extract-entities`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ conversationId: convId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to extract entities');
+      }
+
+      const embedResponse = await fetch(`/api/supabase/functions/v1/embed-conversation`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ conversationId: convId }),
+      });
+
+      if (!embedResponse.ok) {
+        console.warn('Embedding generation failed, but continuing...');
+      }
+
+      const matchResponse = await fetch(`/api/supabase/functions/v1/generate-matches`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ conversationId: convId }),
+      });
+
+      if (!matchResponse.ok) {
+        const errorData = await matchResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to generate matches');
+      }
+
+      return await matchResponse.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['matches', conversationId] });
+      toast({
+        title: "Matches regenerated!",
+        description: "The conversation has been reprocessed with the latest matching algorithm.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to regenerate matches",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const transcript = useMemo(() => {
     return segments
@@ -172,62 +241,6 @@ export default function ConversationDetail() {
       description: `Introduction email sent to ${to}`,
     });
   };
-
-  const regenerateMatches = useMutation({
-    mutationFn: async (convId: string) => {
-      const response = await fetch(`/api/supabase/functions/v1/extract-entities`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: convId }),
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to extract entities');
-      }
-
-      const embedResponse = await fetch(`/api/supabase/functions/v1/embed-conversation`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: convId }),
-        credentials: 'include',
-      });
-
-      if (!embedResponse.ok) {
-        console.warn('Embedding generation failed, but continuing...');
-      }
-
-      const matchResponse = await fetch(`/api/supabase/functions/v1/generate-matches`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: convId }),
-        credentials: 'include',
-      });
-
-      if (!matchResponse.ok) {
-        const errorData = await matchResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to generate matches');
-      }
-
-      return await matchResponse.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['matches', conversationId] });
-      toast({
-        title: "Matches regenerated!",
-        description: "The conversation has been reprocessed with the latest matching algorithm.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to regenerate matches",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
 
   const handleRegenerateMatches = () => {
     if (!conversationId) return;

@@ -30,6 +30,14 @@ export const userPreferences = pgTable("user_preferences", {
   autoTranscribe: boolean("auto_transcribe").notNull().default(true),
   notificationEmail: boolean("notification_email").notNull().default(true),
   matchThreshold: integer("match_threshold").notNull().default(2),
+  
+  // Meeting notification preferences
+  meetingNotificationEnabled: boolean("meeting_notification_enabled").notNull().default(true),
+  meetingNotificationMinutes: integer("meeting_notification_minutes").notNull().default(15),
+  notifyAllMeetings: boolean("notify_all_meetings").notNull().default(false),
+  fcmToken: text("fcm_token"),
+  apnsToken: text("apns_token"),
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -93,6 +101,13 @@ export const contacts = pgTable("contacts", {
   investmentTypes: text("investment_types").array().default(sql`ARRAY[]::text[]`), // 'fund', 'direct', 'co-invest'
   avgCheckSize: integer("avg_check_size"),
   
+  // Relationship scoring
+  relationshipStrength: integer("relationship_strength").default(50), // 0-100 scale
+  
+  // Embeddings for semantic matching (v1.1-transparency)
+  bioEmbedding: text("bio_embedding"), // vector(1536) stored as text for Drizzle compatibility
+  thesisEmbedding: text("thesis_embedding"), // vector(1536) stored as text for Drizzle compatibility
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -133,7 +148,8 @@ export const calendarEvents = pgTable("calendar_events", {
   attendees: jsonb("attendees").default(sql`'[]'::jsonb`), // Array of {name, email}
   location: text("location"),
   meetingUrl: text("meeting_url"),
-  externalEventId: text("external_event_id"), // For future Google Calendar sync
+  externalEventId: text("external_event_id"), // For Google Calendar sync
+  isExternalMeeting: boolean("is_external_meeting").notNull().default(false), // Has external attendees
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -157,6 +173,9 @@ export const conversations = pgTable("conversations", {
   matchingIntent: jsonb("matching_intent"), // {what_kind_of_contacts_to_find, hard_constraints, soft_preferences, urgency}
   goalsAndNeeds: jsonb("goals_and_needs"), // {fundraising, hiring, customers_or_partners, other_needs}
   domainsAndTopics: jsonb("domains_and_topics"), // {industries, keywords, geo, stage}
+  
+  // Embeddings for semantic matching (v1.1-transparency)
+  contextEmbedding: text("context_embedding"), // vector(1536) stored as text for Drizzle compatibility
 });
 
 export const conversationParticipants = pgTable("conversation_participants", {
@@ -379,6 +398,26 @@ export const insertMatchFeedbackSchema = createInsertSchema(matchFeedback).omit(
 });
 
 // ============================================================================
+// NOTIFICATION LOG
+// ============================================================================
+
+export const notificationLog = pgTable("notification_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+  eventId: varchar("event_id").notNull().references(() => calendarEvents.id, { onDelete: 'cascade' }),
+  notificationType: text("notification_type").notNull(), // 'web' or 'mobile'
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  openedAt: timestamp("opened_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertNotificationLogSchema = createInsertSchema(notificationLog).omit({
+  id: true,
+  createdAt: true,
+  sentAt: true,
+});
+
+// ============================================================================
 // TYPE EXPORTS
 // ============================================================================
 
@@ -432,3 +471,6 @@ export type InsertContactAlias = z.infer<typeof insertContactAliasSchema>;
 
 export type MatchFeedback = typeof matchFeedback.$inferSelect;
 export type InsertMatchFeedback = z.infer<typeof insertMatchFeedbackSchema>;
+
+export type NotificationLog = typeof notificationLog.$inferSelect;
+export type InsertNotificationLog = z.infer<typeof insertNotificationLogSchema>;

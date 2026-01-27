@@ -32,14 +32,17 @@ export default function StructuredTranscriptView({
   const speakers = Array.from(new Set(transcript.map(e => e.speaker).filter(Boolean)));
   const firstTimestamp = transcript[0]?.t;
   
-  const groupedByTime = transcript.reduce((acc, entry, idx) => {
-    const groupIndex = Math.floor(idx / 5);
-    if (!acc[groupIndex]) {
-      acc[groupIndex] = [];
+  // Group by speaker turns - consecutive segments by the same speaker
+  const groupedBySpeaker = transcript.reduce((acc, entry, idx) => {
+    if (idx === 0 || entry.speaker !== transcript[idx - 1].speaker) {
+      // New speaker turn
+      acc.push([entry]);
+    } else {
+      // Continue current speaker's turn
+      acc[acc.length - 1].push(entry);
     }
-    acc[groupIndex].push(entry);
     return acc;
-  }, {} as Record<number, TranscriptEntry[]>);
+  }, [] as TranscriptEntry[][]);
 
   return (
     <div className="h-full overflow-y-auto p-8">
@@ -73,35 +76,39 @@ export default function StructuredTranscriptView({
           })}
         </div>
 
-        <div className="space-y-8">
-          {Object.entries(groupedByTime).map(([groupIdx, entries]) => (
-            <div key={groupIdx}>
-              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <span className="text-muted-foreground">#</span>
-                Discussion Section {parseInt(groupIdx) + 1}
-              </h2>
-              <ul className="space-y-3 ml-4">
-                {entries.map((entry, idx) => {
-                  const speakerDisplayName = entry.speaker === 'Unknown' && userName ? userName : entry.speaker;
-                  return (
-                    <li key={idx} className="flex gap-3">
-                      <span className="text-muted-foreground mt-1.5">•</span>
-                      <div className="flex-1">
-                        {speakerDisplayName && (
-                          <span className="font-medium text-sm text-muted-foreground mr-2">
-                            {speakerDisplayName}:
-                          </span>
-                        )}
-                        <span className="text-base leading-relaxed">
-                          {entry.text}
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+        <div className="space-y-6">
+          {groupedBySpeaker.map((turn, turnIdx) => {
+            const speaker = turn[0]?.speaker;
+            const speakerDisplayName = speaker === 'Unknown' && userName ? userName : (speaker || 'Unknown');
+            const isUser = speakerDisplayName === userName;
+            
+            return (
+              <div key={turnIdx} className="group">
+                {/* Speaker label with avatar-style indicator */}
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold ${
+                    isUser 
+                      ? 'bg-primary/20 text-primary' 
+                      : 'bg-muted text-muted-foreground'
+                  }`}>
+                    {speakerDisplayName.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="font-medium text-sm">
+                    {speakerDisplayName}
+                  </span>
+                </div>
+                
+                {/* Speaker's statements */}
+                <div className="ml-11 space-y-2">
+                  {turn.map((entry, entryIdx) => (
+                    <p key={entryIdx} className="text-base leading-relaxed text-foreground">
+                      {entry.text}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
