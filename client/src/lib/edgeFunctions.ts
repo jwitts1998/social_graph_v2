@@ -143,7 +143,9 @@ export async function researchContact(contactId: string) {
   
   if (error) {
     console.error('Research contact error:', error);
-    throw error;
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    console.error('Response data:', data);
+    throw new Error(data?.error || error.message || 'Research failed');
   }
   console.log('Research completed:', data);
   return data as {

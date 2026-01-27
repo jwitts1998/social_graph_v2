@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
     
     const supabaseService = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '' // Directly use Supabase-provided key
     );
     
     const { data: { user } } = await supabaseUser.auth.getUser();
@@ -277,19 +277,31 @@ Deno.serve(async (req) => {
     
     // Get contacts with theses and relationship_strength (bio for AI explanations)
     monitor.start('fetch-contacts', { userId: user.id });
-    const { data: contacts } = await supabaseService
+    const { data: contacts, error: contactsError } = await supabaseService
       .from('contacts')
       .select(`
         id, name, first_name, last_name, title, company, location, bio,
         category, contact_type, check_size_min, check_size_max, is_investor,
         relationship_strength, bio_embedding, thesis_embedding, investor_notes,
-        theses (id, sectors, stages, check_size_min, check_size_max, geos)
+        theses (id, sectors, stages, geos)
       `)
       .eq('owned_by_profile', user.id);
     monitor.end('fetch-contacts');
     
+    if (contactsError) {
+      console.error('=== CONTACTS QUERY ERROR ===');
+      console.error('Error:', contactsError);
+      console.error('User ID:', user.id);
+      console.error('SERVICE_ROLE_KEY configured:', !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'));
+    }
+    
     console.log('=== CONTACTS LOADED ===');
     console.log('Total contacts:', contacts?.length || 0);
+    console.log('Investors only:', contacts?.filter(c => c.is_investor).length || 0);
+    console.log('Sample contacts with theses:');
+    contacts?.slice(0, 3).forEach(c => {
+      console.log(`  - ${c.name} (${c.company}): thesis=${!!c.theses}, sectors=${c.theses?.sectors?.length || 0}`);
+    });
     
     if (!contacts || contacts.length === 0) {
       console.log('NO CONTACTS - returning empty matches');
@@ -822,7 +834,6 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
         justification: match.justification,
         status: 'pending',
         score_breakdown: match.scoreBreakdown || {},
-        confidence_scores: match.confidenceScores || {},
         match_version: 'v1.1-transparency',
       };
       
@@ -839,7 +850,7 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
         })
         .select(`
           id, conversation_id, contact_id, score, reasons, justification, ai_explanation, status, created_at,
-          score_breakdown, confidence_scores, match_version,
+          score_breakdown, match_version,
           contacts:contact_id ( name )
         `)
         .single();

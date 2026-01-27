@@ -85,6 +85,78 @@ export default function Settings() {
     enabled: !!user,
   });
 
+  // Notification preferences
+  const [notificationEnabled, setNotificationEnabled] = useState(true);
+  const [notificationMinutes, setNotificationMinutes] = useState(15);
+  const [notifyAllMeetings, setNotifyAllMeetings] = useState(false);
+
+  // Fetch notification preferences
+  const { data: notificationPrefs, isLoading: isLoadingNotifPrefs } = useQuery({
+    queryKey: ['/notification-preferences', user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data, error } = await supabase
+        .from('user_preferences')
+        .select('meeting_notification_enabled, meeting_notification_minutes, notify_all_meetings')
+        .eq('profile_id', user.id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user,
+  });
+
+  // Update local state when prefs load
+  useEffect(() => {
+    if (notificationPrefs) {
+      setNotificationEnabled(notificationPrefs.meeting_notification_enabled ?? true);
+      setNotificationMinutes(notificationPrefs.meeting_notification_minutes ?? 15);
+      setNotifyAllMeetings(notificationPrefs.notify_all_meetings ?? false);
+    }
+  }, [notificationPrefs]);
+
+  // Save notification preferences
+  const saveNotificationPrefs = useMutation({
+    mutationFn: async (updates: any) => {
+      if (!user) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('user_preferences')
+        .update(updates)
+        .eq('profile_id', user.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/notification-preferences'] });
+      toast({
+        title: "Settings Updated",
+        description: "Your notification preferences have been saved.",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save notification preferences.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleNotificationEnabledChange = (enabled: boolean) => {
+    setNotificationEnabled(enabled);
+    saveNotificationPrefs.mutate({ meeting_notification_enabled: enabled });
+  };
+
+  const handleNotificationMinutesChange = (minutes: number) => {
+    setNotificationMinutes(minutes);
+    saveNotificationPrefs.mutate({ meeting_notification_minutes: minutes });
+  };
+
+  const handleNotifyAllMeetingsChange = (notifyAll: boolean) => {
+    setNotifyAllMeetings(notifyAll);
+    saveNotificationPrefs.mutate({ notify_all_meetings: notifyAll });
+  };
+
   // Query Hunter.io status
   const { data: hunterStatus, refetch: refetchHunterStatus, isLoading: isHunterLoading, error: hunterError } = useQuery({
     queryKey: ['/hunter-status'],
@@ -858,6 +930,124 @@ export default function Settings() {
             </div>
           )}
         </Card>
+
+        {/* Meeting Notification Preferences */}
+        {preferences?.google_calendar_connected && (
+          <Card className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <Bell className="w-5 h-5 text-primary" />
+              <h2 className="text-xl font-semibold">Meeting Notifications</h2>
+            </div>
+            <div className="space-y-6">
+              <p className="text-sm text-muted-foreground">
+                Get notified before your meetings start so you can prepare and join on time.
+              </p>
+
+              {/* Enable/Disable Notifications */}
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <label className="text-sm font-medium">Enable meeting notifications</label>
+                  <p className="text-sm text-muted-foreground">
+                    Receive push notifications before meetings
+                  </p>
+                </div>
+                <Switch
+                  checked={notificationEnabled}
+                  onCheckedChange={handleNotificationEnabledChange}
+                  disabled={saveNotificationPrefs.isPending}
+                />
+              </div>
+
+              <Separator />
+
+              {/* Notification Timing */}
+              {notificationEnabled && (
+                <>
+                  <div className="space-y-3">
+                    <label className="text-sm font-medium">Notify me before meeting</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {[5, 10, 15, 30, 60].map((minutes) => (
+                        <Button
+                          key={minutes}
+                          variant={notificationMinutes === minutes ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handleNotificationMinutesChange(minutes)}
+                          disabled={saveNotificationPrefs.isPending}
+                          className="w-full"
+                        >
+                          {minutes} min
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Meeting Type Filter */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <label className="text-sm font-medium">Notify for all meetings</label>
+                      <p className="text-sm text-muted-foreground">
+                        By default, only external meetings trigger notifications
+                      </p>
+                    </div>
+                    <Switch
+                      checked={notifyAllMeetings}
+                      onCheckedChange={handleNotifyAllMeetingsChange}
+                      disabled={saveNotificationPrefs.isPending}
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* Browser Permission Status */}
+              {notificationEnabled && 'Notification' in window && (
+                <div className="p-3 bg-muted rounded-md">
+                  <div className="flex items-start gap-2">
+                    <Bell className="w-4 h-4 mt-0.5 text-muted-foreground" />
+                    <div className="flex-1 text-sm">
+                      <p className="font-medium mb-1">Browser Notifications</p>
+                      <p className="text-muted-foreground">
+                        Status: {
+                          Notification.permission === 'granted' ? (
+                            <span className="text-green-600 dark:text-green-400">Enabled ✓</span>
+                          ) : Notification.permission === 'denied' ? (
+                            <span className="text-red-600 dark:text-red-400">Blocked</span>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400">Not set</span>
+                          )
+                        }
+                      </p>
+                      {Notification.permission === 'default' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          onClick={async () => {
+                            const permission = await Notification.requestPermission();
+                            if (permission === 'granted') {
+                              toast({
+                                title: "Notifications Enabled",
+                                description: "You'll now receive meeting notifications in your browser.",
+                              });
+                            }
+                          }}
+                        >
+                          Enable Browser Notifications
+                        </Button>
+                      )}
+                      {Notification.permission === 'denied' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Please enable notifications in your browser settings
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-4">

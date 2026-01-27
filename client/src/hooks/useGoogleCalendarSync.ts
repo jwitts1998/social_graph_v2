@@ -37,6 +37,7 @@ export function useGoogleCalendarSync() {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${session.session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY || '',
             'Content-Type': 'application/json',
           },
         }

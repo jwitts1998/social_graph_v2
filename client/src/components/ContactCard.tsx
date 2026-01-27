@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,7 +14,6 @@ const ExpandIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 import { Separator } from "@/components/ui/separator";
-import EnrichmentDialog from "@/components/EnrichmentDialog";
 import RoleTag from "@/components/RoleTag";
 import { formatCheckSizeRange } from "@/lib/currencyFormat";
 import { useContactThesis, useExtractThesis } from "@/hooks/useContacts";
@@ -56,9 +54,10 @@ interface ContactCardProps {
   tags: string[];
   lastInteractionAt?: string;
   onEdit: () => void;
+  onEnrich: () => void;
   
   // Investor Profile fields
-  contactType?: ('LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE')[];
+  contactType?: ('LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE' | 'Other')[];
   isInvestor?: boolean;
   checkSizeMin?: number;
   checkSizeMax?: number;
@@ -66,13 +65,13 @@ interface ContactCardProps {
 }
 
 // Helper function to auto-detect contact types from title
-const detectContactTypesFromTitle = (title: string | undefined): ('LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE')[] => {
+const detectContactTypesFromTitle = (title: string | undefined): ('LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE' | 'Other')[] => {
   if (!title) return [];
   
   const titleLower = title.toLowerCase();
-  const detectedTypes: ('LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE')[] = [];
+  const detectedTypes: ('LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE' | 'Other')[] = [];
   
-  const typeKeywords: Array<{ keywords: string[], type: 'LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE' }> = [
+  const typeKeywords: Array<{ keywords: string[], type: 'LP' | 'GP' | 'Angel' | 'FamilyOffice' | 'Startup' | 'PE' | 'Other' }> = [
     { keywords: ['general partner', ' gp', 'gp '], type: 'GP' },
     { keywords: ['limited partner', ' lp', 'lp '], type: 'LP' },
     { keywords: ['angel investor', 'angel'], type: 'Angel' },
@@ -124,13 +123,13 @@ export default function ContactCard({
   tags,
   lastInteractionAt,
   onEdit,
+  onEnrich,
   contactType,
   isInvestor = false,
   checkSizeMin,
   checkSizeMax,
   investorNotes,
 }: ContactCardProps) {
-  const [showEnrichDialog, setShowEnrichDialog] = useState(false);
   const { toast } = useToast();
   
   const { data: thesis, isLoading: thesisLoading } = useContactThesis(id);
@@ -173,7 +172,10 @@ export default function ContactCard({
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => setShowEnrichDialog(true)}
+            onClick={() => {
+              console.log('[ContactCard] Enrichment button clicked for:', fullName, id);
+              onEnrich();
+            }}
             data-testid="button-enrich-contact"
             title="Enrich contact data"
           >
@@ -203,13 +205,6 @@ export default function ContactCard({
             {fullName}
           </h3>
         </div>
-        
-        <EnrichmentDialog
-          contactId={id}
-          contactName={fullName}
-          open={showEnrichDialog}
-          onOpenChange={setShowEnrichDialog}
-        />
 
         {/* Main Contact Information */}
         <div className="space-y-2">

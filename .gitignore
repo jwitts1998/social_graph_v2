@@ -4,3 +4,7 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# MCP Server
+mcp-supabase/node_modules
+mcp-supabase/dist

@@ -122,18 +122,20 @@ router.get('/callback', async (req, res) => {
     const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
     const { data: profile } = await oauth2.userinfo.get();
 
-    // Store tokens in user_preferences
+    // Store tokens in user_preferences (upsert to create row if it doesn't exist)
     const { error } = await supabase
       .from('user_preferences')
-      .update({
+      .upsert({
+        profile_id: userId,
         google_access_token: tokens.access_token,
         google_refresh_token: tokens.refresh_token || null,
         google_token_expiry: tokens.expiry_date 
           ? new Date(tokens.expiry_date).toISOString() 
           : null,
         google_calendar_connected: true
-      })
-      .eq('profile_id', userId);
+      }, {
+        onConflict: 'profile_id'
+      });
 
     if (error) {
       console.error('Error storing tokens:', error);
@@ -167,17 +169,19 @@ router.post('/disconnect', async (req, res) => {
     // Use authenticated user ID, not client-supplied
     const userId = user.id;
 
-    // Clear tokens from user_preferences
+    // Clear tokens from user_preferences (upsert to ensure row exists)
     const { error } = await supabase
       .from('user_preferences')
-      .update({
+      .upsert({
+        profile_id: userId,
         google_access_token: null,
         google_refresh_token: null,
         google_token_expiry: null,
         google_calendar_sync_token: null,
         google_calendar_connected: false
-      })
-      .eq('profile_id', userId);
+      }, {
+        onConflict: 'profile_id'
+      });
 
     if (error) {
       console.error('Disconnect error:', error);

@@ -66,11 +66,104 @@ function detectContactTypes(title: string | null, bio: string | null, existingTy
   return Array.from(detectedTypes);
 }
 
-// Use standard OpenAI Chat API as primary method
-async function generateBioWithChatAPI(openaiApiKey: string, name: string, company: string | null, title: string | null) {
-  console.log('[Research] Using Chat API for:', name);
+// Web search using Serper API
+async function searchGoogle(query: string, serperApiKey: string) {
+  try {
+    const response = await fetch('https://google.serper.dev/search', {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': serperApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ q: query, num: 10 }),
+    });
+
+    if (!response.ok) {
+      console.error('[Search] Serper error:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.organic || [];
+  } catch (error) {
+    console.error('[Search] Error:', error);
+    return null;
+  }
+}
+
+// Enhanced research with real web search
+async function generateBioWithChatAPI(
+  openaiApiKey: string, 
+  serperApiKey: string | null,
+  name: string, 
+  company: string | null, 
+  title: string | null,
+  location: string | null,
+  isInvestor: boolean
+) {
+  console.log('[Research] Using Chat API with web search for:', name);
   
-  const prompt = `Generate a professional bio for this person based on their available information.
+  let searchContext = '';
+  
+  // Step 1: Do real web searches if Serper key available
+  if (serperApiKey) {
+    console.log('[Research] Performing web searches...');
+    
+    const queries = [
+      `"${name}" ${company ? `"${company}"` : ''} LinkedIn profile`,
+      isInvestor 
+        ? `"${name}" ${company ? `"${company}"` : ''} Crunchbase investor portfolio`
+        : `"${name}" ${company ? `"${company}"` : ''} biography`,
+    ];
+    
+    const searchResults = await Promise.all(
+      queries.map(q => searchGoogle(q, serperApiKey))
+    );
+    
+    // Format search results for GPT
+    const validResults = searchResults.filter(r => r && r.length > 0);
+    if (validResults.length > 0) {
+      searchContext = '\n\nREAL WEB SEARCH RESULTS:\n' + 
+        validResults.map((results, idx) => {
+          const topResults = results.slice(0, 5);
+          return `Search ${idx + 1}: ${queries[idx]}\n` +
+            topResults.map((r: any, i: number) => 
+              `${i + 1}. ${r.title}\n   ${r.snippet}\n   URL: ${r.link}`
+            ).join('\n');
+        }).join('\n\n');
+      
+      console.log('[Research] Found', validResults.length, 'search result sets');
+    }
+  }
+  
+  // Step 2: Ask GPT to extract from real data (or generate if no search)
+  const prompt = searchContext 
+    ? `You are a professional researcher. Extract FACTUAL information from the web search results below.
+
+TARGET PERSON:
+Name: ${name}
+${company ? `Company: ${company}` : ''}
+${title ? `Title: ${title}` : ''}
+${location ? `Location: ${location}` : ''}
+${searchContext}
+
+Extract structured data from the REAL search results above. Only include information actually found in the sources:
+{
+  "title": "Their actual job title from sources",
+  "bio": "2-3 sentence factual bio from real sources",
+  "company": "Their company from sources",
+  "location": "Their location if found",
+  "linkedin_url": "LinkedIn URL if found in search results",
+  "education": [{"school": "MIT", "degree": "PhD", "field": "CS", "year": 2015}],
+  "career_history": [{"company": "Google", "role": "PM", "years": "2015-2020"}],
+  "expertise_areas": ["marketplaces", "growth"],
+  "personal_interests": ["rock climbing", "photography"],
+  "portfolio_companies": ["Stripe", "Plaid"] /* if investor */,
+  "found": true
+}
+
+CRITICAL: Extract ONLY factual information from the search results. If not found, use null or empty array [].`
+    : `Generate a professional bio for this person based on their available information.
 Person: ${name}
 ${company ? `Company: ${company}` : ''}
 ${title ? `Title: ${title}` : ''}
@@ -94,11 +187,16 @@ Return ONLY a valid JSON object:
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'You are a professional researcher. Generate realistic professional bios. Always return valid JSON.' },
+          { 
+            role: 'system', 
+            content: searchContext 
+              ? 'You are a professional researcher. Extract factual information from web sources. Always return valid JSON.'
+              : 'You are a professional researcher. Generate realistic professional bios. Always return valid JSON.'
+          },
           { role: 'user', content: prompt }
         ],
-        temperature: 0.7,
-        max_tokens: 500,
+        temperature: 0.2, // Lower temp for factual accuracy
+        max_tokens: 1500, // More tokens for richer data
       }),
     });
 
@@ -187,12 +285,22 @@ Return ONLY a valid JSON object:
 }
 
 Deno.serve(async (req) => {
+  console.log('=== FUNCTION INVOKED ===');
+  console.log('Method:', req.method);
+  console.log('Headers:', Object.fromEntries(req.headers.entries()));
+  
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')!;
+    console.log('=== STARTING RESEARCH ===');
+    const authHeader = req.headers.get('Authorization');
+    console.log('Auth header present:', !!authHeader);
+    
+    if (!authHeader) {
+      throw new Error('Missing Authorization header');
+    }
     
     const supabaseUser = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -205,21 +313,45 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
     
+    console.log('Service client configured with SUPABASE_SERVICE_ROLE_KEY');
+    
     const { data: { user } } = await supabaseUser.auth.getUser();
     if (!user) {
       throw new Error('Unauthorized');
     }
+    console.log('User ID:', user.id);
 
     const { contactId } = await req.json();
     console.log('=== RESEARCH CONTACT START ===');
     console.log('Contact ID:', contactId);
     
-    // Get contact data
+    // Get contact data - first check if contact exists at all
+    const { data: contactCheck, error: checkError } = await supabaseService
+      .from('contacts')
+      .select('id, name, owned_by_profile')
+      .eq('id', contactId)
+      .single();
+    
+    console.log('Contact check:', contactCheck);
+    console.log('Contact check error:', checkError);
+    
+    if (checkError) {
+      throw new Error(`Contact query failed: ${checkError.message}`);
+    }
+    
+    if (!contactCheck) {
+      throw new Error('Contact not found');
+    }
+    
+    if (contactCheck.owned_by_profile !== user.id) {
+      throw new Error(`Access denied: contact owned by ${contactCheck.owned_by_profile}, user is ${user.id}`);
+    }
+    
+    // Get full contact data
     const { data: contact, error: contactError } = await supabaseService
       .from('contacts')
       .select('*')
       .eq('id', contactId)
-      .eq('owned_by_profile', user.id)
       .single();
 
     if (contactError || !contact) {
@@ -245,6 +377,13 @@ Deno.serve(async (req) => {
     if (!openaiApiKey) {
       throw new Error('OPENAI_API_KEY not configured');
     }
+    
+    const serperApiKey = Deno.env.get('SERPER_API_KEY');
+    if (serperApiKey) {
+      console.log('[Research] Serper API available - will use web search');
+    } else {
+      console.log('[Research] No Serper key - will use basic generation');
+    }
 
     // Determine if this is an investor contact
     const investorTypes = ['GP', 'Angel', 'Family Office', 'PE', 'VC'];
@@ -254,12 +393,20 @@ Deno.serve(async (req) => {
     let bioResult = null;
     let thesisResult = null;
     
-    // Step 1: Generate bio using Chat API (always generates content for contacts missing bio)
+    // Step 1: Generate bio using Chat API with web search (always generates content for contacts missing bio)
     const needsBioOrTitle = !contact.bio || !contact.title || contact.bio?.length < 50;
     
     if (needsBioOrTitle) {
-      console.log('[Research] Step 1: Generating bio for:', contact.name);
-      bioResult = await generateBioWithChatAPI(openaiApiKey, contact.name, contact.company, contact.title);
+      console.log('[Research] Step 1: Researching contact with web search:', contact.name);
+      bioResult = await generateBioWithChatAPI(
+        openaiApiKey, 
+        serperApiKey,
+        contact.name, 
+        contact.company, 
+        contact.title,
+        contact.location,
+        isInvestor
+      );
       console.log('[Research] Bio result:', bioResult ? 'SUCCESS' : 'FAILED');
     } else {
       console.log('[Research] Skipping bio - already has:', contact.bio?.substring(0, 50));
@@ -289,6 +436,13 @@ Deno.serve(async (req) => {
       if (bioResult.company && !contact.company) {
         updates.company = bioResult.company;
       }
+      if (bioResult.location && !contact.location) {
+        updates.location = bioResult.location;
+      }
+      if (bioResult.linkedin_url && !contact.linkedin_url) {
+        updates.linkedin_url = bioResult.linkedin_url;
+      }
+      
       // Add company_url if found and contact doesn't have one
       if (bioResult.company_url && !contact.company_url) {
         const url = bioResult.company_url;
@@ -296,6 +450,39 @@ Deno.serve(async (req) => {
           updates.company_url = url;
           console.log('Found company URL:', url);
         }
+      }
+      
+      // Enhanced fields (for future schema - storing as JSON in investor_notes for now)
+      const enrichedData: any = {};
+      
+      if (bioResult.education && bioResult.education.length > 0) {
+        enrichedData.education = bioResult.education;
+      }
+      if (bioResult.career_history && bioResult.career_history.length > 0) {
+        enrichedData.career_history = bioResult.career_history;
+      }
+      if (bioResult.expertise_areas && bioResult.expertise_areas.length > 0) {
+        enrichedData.expertise_areas = bioResult.expertise_areas;
+      }
+      if (bioResult.personal_interests && bioResult.personal_interests.length > 0) {
+        enrichedData.personal_interests = bioResult.personal_interests;
+      }
+      if (bioResult.portfolio_companies && bioResult.portfolio_companies.length > 0) {
+        enrichedData.portfolio_companies = bioResult.portfolio_companies;
+      }
+      
+      // Store enriched data in investor_notes as structured comment
+      if (Object.keys(enrichedData).length > 0) {
+        const enrichedSection = '\n\n--- Enhanced Profile Data ---\n' + 
+          JSON.stringify(enrichedData, null, 2);
+        
+        if (!contact.investor_notes || contact.investor_notes.length < 50) {
+          updates.investor_notes = enrichedSection;
+        } else if (!contact.investor_notes.includes('Enhanced Profile Data')) {
+          updates.investor_notes = contact.investor_notes + enrichedSection;
+        }
+        
+        console.log('[Research] Added enriched data:', Object.keys(enrichedData).join(', '));
       }
     }
     
