@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Calendar, Clock, Mic } from "lucide-react";
@@ -13,11 +13,32 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+const RECORDING_FROM_CONTACT_KEY = "recordingFromContact";
+
 export default function HomeNew() {
   const [, setLocation] = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [defaultTitleForDrawer, setDefaultTitleForDrawer] = useState<string | null>(null);
+  const [defaultContactIdForDrawer, setDefaultContactIdForDrawer] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // One-click "Start conversation" from contact profile: open drawer with pre-filled title and contactId
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(RECORDING_FROM_CONTACT_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(RECORDING_FROM_CONTACT_KEY);
+      const { contactName, contactId } = JSON.parse(raw) as { contactName?: string; contactId?: string };
+      if (contactName) {
+        setDefaultTitleForDrawer(`Conversation with ${contactName}`);
+        if (contactId) setDefaultContactIdForDrawer(contactId);
+        setDrawerOpen(true);
+      }
+    } catch (_) {
+      sessionStorage.removeItem(RECORDING_FROM_CONTACT_KEY);
+    }
+  }, []);
   
   const { data: todaysEvents, isLoading: eventsLoading } = useTodaysEvents();
   const { data: conversations = [], isLoading: conversationsLoading } = useConversations();
@@ -260,9 +281,15 @@ export default function HomeNew() {
         open={drawerOpen} 
         onOpenChange={(open) => {
           setDrawerOpen(open);
-          if (!open) setSelectedEventId(null);
+          if (!open) {
+            setSelectedEventId(null);
+            setDefaultTitleForDrawer(null);
+            setDefaultContactIdForDrawer(null);
+          }
         }}
         eventId={selectedEventId}
+        defaultTitle={defaultTitleForDrawer}
+        defaultContactId={defaultContactIdForDrawer}
       />
     </>
   );

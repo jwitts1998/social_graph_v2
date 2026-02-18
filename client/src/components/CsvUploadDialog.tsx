@@ -51,6 +51,19 @@ interface ParsedContact {
 
 type UploadStage = 'upload' | 'parsing' | 'importing' | 'enriching' | 'complete';
 
+function computePriority(contact: any): number {
+  const completeness = contact.data_completeness_score ?? 0;
+  let score = 100 - completeness;
+  const investorTypes = ['GP', 'LP', 'Angel', 'FamilyOffice', 'Family Office', 'PE'];
+  if (contact.is_investor || contact.contact_type?.some((t: string) => investorTypes.includes(t))) {
+    score += 20;
+  }
+  if (contact.linkedin_url) score += 10;
+  if (contact.company) score += 5;
+  if (contact.email) score += 5;
+  return score;
+}
+
 export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [stage, setStage] = useState<UploadStage>('upload');
@@ -586,10 +599,10 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
     setStage('enriching');
     setProgress(0);
 
-    // Only enrich contacts that have potential for enrichment
+    // Fetch contacts with enrichment-relevant fields for priority sorting
     const { data: contactsToEnrich } = await supabase
       .from('contacts')
-      .select('id, email, name, company, linkedin_url')
+      .select('id, email, name, company, linkedin_url, is_investor, contact_type, data_completeness_score')
       .in('id', contactIds)
       .or('email.not.is.null,linkedin_url.not.is.null,company.not.is.null') as { data: any[] | null };
 
@@ -602,6 +615,13 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
       }
       return;
     }
+
+    // Sort by enrichment priority (investors and contacts with LinkedIn/company first)
+    contactsToEnrich.sort((a: any, b: any) => {
+      const scoreA = computePriority(a);
+      const scoreB = computePriority(b);
+      return scoreB - scoreA;
+    });
 
     let enriched = 0;
     let enrichmentFailed = 0;
@@ -806,6 +826,7 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
                 <p>2. Import to database (even with missing data)</p>
                 <p>3. Enrich with Hunter.io & People Data Labs</p>
                 <p>4. Validate emails and LinkedIn URLs</p>
+                <p className="text-xs text-muted-foreground mt-1">Tip: Including LinkedIn URLs dramatically improves enrichment accuracy</p>
               </div>
             </div>
           )}

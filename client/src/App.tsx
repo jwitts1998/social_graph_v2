@@ -14,6 +14,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
 import Record from "@/pages/Record";
 import Contacts from "@/pages/Contacts";
+import ContactProfile from "@/pages/ContactProfile";
 import History from "@/pages/History";
 import ConversationDetail from "@/pages/ConversationDetail";
 import Settings from "@/pages/Settings";
@@ -68,6 +69,9 @@ function Router() {
       </Route>
       <Route path="/contacts">
         {() => <ProtectedRoute component={Contacts} />}
+      </Route>
+      <Route path="/contacts/:id">
+        {() => <ProtectedRoute component={ContactProfile} />}
       </Route>
       <Route path="/history">
         {() => <ProtectedRoute component={History} />}

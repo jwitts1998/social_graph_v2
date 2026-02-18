@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Mail, X, Clock, Building2, Briefcase, Star, Check, ThumbsUp, ThumbsDown, Heart } from "lucide-react";
 import MatchScoreBreakdown from "@/components/MatchScoreBreakdown";
+import ContactPreviewPopover from "@/components/ContactPreviewPopover";
 
 interface ContactDetails {
   name: string;
@@ -39,6 +40,7 @@ interface ConfidenceScores {
 
 interface SuggestionCardProps {
   contact: ContactDetails;
+  contactId?: string;
   score: 1 | 2 | 3;
   reasons: string[];
   status?: string;
@@ -58,6 +60,7 @@ interface SuggestionCardProps {
 
 export default function SuggestionCard({
   contact,
+  contactId,
   score,
   reasons,
   status = 'pending',
@@ -110,9 +113,21 @@ export default function SuggestionCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2">
-            <h4 className="text-base font-semibold truncate" data-testid="text-contact-name">
-              {contact.name}
-            </h4>
+            {contactId ? (
+              <ContactPreviewPopover contactId={contactId}>
+                <button
+                  type="button"
+                  className="text-base font-semibold truncate text-left hover:underline cursor-pointer focus:outline-none"
+                  data-testid="text-contact-name"
+                >
+                  {contact.name}
+                </button>
+              </ContactPreviewPopover>
+            ) : (
+              <h4 className="text-base font-semibold truncate" data-testid="text-contact-name">
+                {contact.name}
+              </h4>
+            )}
             {status !== 'pending' && statusIcons[status as keyof typeof statusIcons]}
           </div>
           

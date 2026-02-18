@@ -1,0 +1,84 @@
+epic: Match Transparency & Explainability
+feature: Match Explanation UI
+
+context:
+  phase: 2
+  spec_refs:
+    - "Docs: docs/MATCHING_LOGIC.md"
+    - "Docs: docs/GAP_ANALYSIS.md"
+    - "Backlog: docs/DEVELOPMENT_BACKLOG.md — Phase 2"
+  notes: >
+    Create detailed UI showing why matches were suggested, including individual
+    scoring factors, confidence scores, and expandable details. This is the
+    highest-priority feature in Phase 2 (Transparency & Explainability).
+
+defaults:
+  status: todo
+  priority: high
+  owner: jackson
+  envs: [dev]
+
+tasks:
+  - id: MATCH_T1_scoring_breakdown_api
+    title: "Expose scoring breakdown in match suggestion data"
+    type: story
+    status: todo
+    priority: high
+    agent_roles:
+      - matching_entity
+      - supabase
+      - shared_types
+    spec_refs:
+      - "Docs: docs/MATCHING_LOGIC.md — scoring factors"
+    description: >
+      Ensure generate-matches Edge Function returns detailed scoring breakdown
+      per match (semantic similarity, tag overlap, role match, geographic match,
+      relationship strength, name boost) alongside the overall score and star
+      rating. Update shared types to reflect the enriched response shape.
+    code_areas:
+      - "supabase/functions/generate-matches/index.ts"
+      - "shared/schema.ts"
+    acceptance_criteria:
+      - "Each match suggestion includes per-factor scores"
+      - "Shared types updated with scoring breakdown interface"
+      - "Backward compatible with existing match_suggestions table"
+    tests:
+      - "Unit test: scoring breakdown values sum correctly to weighted score"
+      - "Integration test: Edge Function returns breakdown in response"
+    blocked_by: []
+    blocks:
+      - MATCH_T2_explanation_ui
+
+  - id: MATCH_T2_explanation_ui
+    title: "Build match explanation UI component"
+    type: story
+    status: todo
+    priority: high
+    agent_roles:
+      - frontend
+      - matching_entity
+      - testing
+    spec_refs:
+      - "Docs: docs/MATCHING_LOGIC.md — star ratings, weights"
+      - "Design: docs/CONTACT_PROFILE_DESIGN.md"
+    description: >
+      Create a React component that visualizes match scoring breakdown.
+      Show individual factor scores (bar chart or progress bars), overall
+      star rating, and AI-generated explanation text. Use shadcn/ui
+      components and TailwindCSS. Should be expandable/collapsible.
+    code_areas:
+      - "client/src/components/"
+      - "client/src/hooks/"
+    acceptance_criteria:
+      - "Component shows individual scoring factors with visual indicators"
+      - "Star rating displayed prominently"
+      - "AI explanation text shown when available"
+      - "Expandable/collapsible detail view"
+      - "Responsive design works on mobile and desktop"
+    tests:
+      - "Component test: renders scoring breakdown correctly"
+      - "Component test: expand/collapse works"
+      - "Component test: handles missing AI explanation gracefully"
+    blocked_by:
+      - MATCH_T1_scoring_breakdown_api
+    blocks: []

@@ -1,0 +1,125 @@
+# Workflow Tracker - Social Graph v2
+# Machine-readable task tracking format for automation and CI/CD integration
+#
+# Last synced: 2026-02-16
+# Schema version: 1.0.0
+
+metadata:
+  version: 1.0.0
+  schema_version: 1.0.0
+  last_updated: '2026-02-16'
+  project: 'Social Graph v2'
+  description: Machine-readable format of project backlog for automation, CI/CD, and reporting
+
+milestones:
+  completed:
+    - id: architecture-docs
+      title: "Architecture documentation and gap analysis"
+      description: >-
+        Documented current matching system architecture, performed gap analysis,
+        and created improvement recommendations.
+        See docs/ARCHITECTURE_MATCHING_SYSTEM.md and docs/GAP_ANALYSIS.md.
+      status: completed
+      priority: high
+      effort: medium
+      dependencies: []
+      documentation:
+        - "docs/ARCHITECTURE_MATCHING_SYSTEM.md"
+        - "docs/GAP_ANALYSIS.md"
+      tags:
+        - documentation
+        - architecture
+      completed_date: '2025-01-15'
+
+    - id: contact-enrichment
+      title: "Contact enrichment and profile system"
+      description: >-
+        Added rich contact enrichment (Serper + GPT-4o-mini), social media enrichment,
+        Contact Profile page, data quality module, and personal affinity scoring.
+      status: completed
+      priority: high
+      effort: large
+      dependencies:
+        - architecture-docs
+      documentation:
+        - "docs/CONTACT_PROFILE_DESIGN.md"
+      tags:
+        - enrichment
+        - contacts
+        - matching
+
+  in_progress:
+    - id: enrichment-validation
+      title: "Enrichment v1.2 validation and production deploy"
+      description: >-
+        Test enrichment on 10-20 contacts for data completeness and match quality.
+        Decide social enrichment integration approach. Deploy to production.
+      status: in_progress
+      priority: high
+      effort: medium
+      dependencies:
+        - contact-enrichment
+      documentation: []
+      tags:
+        - enrichment
+        - testing
+        - deployment
+
+  planned:
+    - id: transparency-explainability
+      title: "Match transparency and explainability UI"
+      description: >-
+        Create detailed UI showing why matches were suggested, including individual
+        scoring factors, confidence scores, and expandable details.
+      status: planned
+      priority: high
+      effort: large
+      dependencies:
+        - enrichment-validation
+      documentation: []
+      tags:
+        - matching
+        - ui
+        - transparency
+
+    - id: multi-agent-system
+      title: "Multi-agent development system integration"
+      description: >-
+        Integrate multi-agent system template into the repo with AGENTS.md,
+        task tracking, workflow docs, and subagent configs customized for
+        Social Graph v2.
+      status: planned
+      priority: medium
+      effort: medium
+      dependencies: []
+      documentation:
+        - "AGENTS.md"
+        - "docs/workflow/MULTI_AGENT_WORKFLOW.md"
+        - "docs/workflow/DEVELOPMENT_WORKFLOW.md"
+      tags:
+        - tooling
+        - workflow
+        - agents
+
+gaps:
+  - id: test-coverage
+    title: "Limited test coverage across the stack"
+    description: >-
+      Matching algorithm, entity extraction, and React components lack
+      comprehensive automated tests. Need unit, integration, and E2E tests.
+    status: open
+    priority: high
+    tags:
+      - testing
+      - technical-debt
+
+  - id: matching-docs-sync
+    title: "Matching logic documentation may drift from code"
+    description: >-
+      docs/MATCHING_LOGIC.md needs to be kept in sync with actual algorithm
+      in generate-matches/index.ts. No automated check for drift.
+    status: open
+    priority: medium
+    tags:
+      - documentation
+      - matching

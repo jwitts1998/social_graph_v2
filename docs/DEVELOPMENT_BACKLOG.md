@@ -2,103 +2,135 @@
 
 ## Sprint Planning
 
-### Current Sprint: Architecture Documentation & Gap Analysis
+### Completed Sprint: Architecture Documentation & Gap Analysis
 **Goal**: Document current system and identify improvement opportunities
+**Status**: Complete
 
-#### In Progress
+#### Completed
 - [x] Explore codebase architecture
 - [x] Create .cursorrules file
 - [x] Create feature tasks document
 - [x] Create development backlog
-- [ ] Document current matching system architecture
-- [ ] Perform gap analysis
-- [ ] Create improvement recommendations
-
-#### Completed
+- [x] Document current matching system architecture → `docs/ARCHITECTURE_MATCHING_SYSTEM.md`
+- [x] Perform gap analysis → `docs/GAP_ANALYSIS.md`
+- [x] Create improvement recommendations → included in `docs/GAP_ANALYSIS.md`
 - [x] Initial codebase exploration
 - [x] Documentation structure setup
 
 ---
 
+### Completed Sprint: Contact Enrichment & Profile
+**Goal**: Add rich contact enrichment and a dedicated contact profile page
+
+#### Completed
+- [x] Contact enrichment system (Serper + GPT-4o-mini) — DB migration, research-contact, generate-matches, frontend display
+- [x] Social media enrichment function (`enrich-social`) — deployed, standalone, ready for testing
+- [x] Contact Profile page (`/contacts/:id`) — hero, quick actions, smart insights, shared context, deeper context
+- [x] Data quality module (`_shared/data-quality.ts`) — completeness scoring, priority, quality assessment
+- [x] Personal affinity scoring in matching algorithm — education overlap, interests, portfolio, expertise
+- [x] Updated schema types for enrichment fields
+- [x] Calendar sync updates and unique constraint migration
+- [x] Transcription fix
+
+#### Awaiting Validation
+- [ ] Enrichment v1.2 testing on 10–20 contacts (data completeness + match quality) → use `docs/ENRICHMENT_VALIDATION_2025.md`
+- [x] Social enrichment integration decision → UI button on Contact Profile ("Social" button calls `enrich-social`)
+- [ ] Production deploy of enrichment + profile changes
+
+---
+
 ## Backlog Items
 
-### Phase 1: Foundation & Documentation (Current)
+### Phase 1: Foundation & Documentation (Complete)
 **Estimated Duration**: 1-2 weeks
+**Status**: Complete
 
 1. **Architecture Documentation** [A1]
-   - Status: In Progress
+   - Status: Complete ✅
    - Priority: P0
-   - Assignee: TBD
    - Description: Create comprehensive documentation of current matching system
+   - Deliverable: `docs/ARCHITECTURE_MATCHING_SYSTEM.md`
    - Acceptance Criteria:
-     - Complete architecture map created
-     - All components documented
-     - Data flow diagrams included
-     - Dependencies mapped
+     - [x] Complete architecture map created
+     - [x] All components documented
+     - [x] Data flow diagrams included
+     - [x] Dependencies mapped
 
 2. **Gap Analysis** [A1.1]
-   - Status: Pending
+   - Status: Complete ✅
    - Priority: P0
    - Dependencies: Architecture documentation
    - Description: Identify gaps between current and ideal matching system
+   - Deliverable: `docs/GAP_ANALYSIS.md`
    - Acceptance Criteria:
-     - Gap analysis document created
-     - Improvement opportunities identified
-     - Prioritized recommendations provided
+     - [x] Gap analysis document created
+     - [x] Improvement opportunities identified
+     - [x] Prioritized recommendations provided
 
-### Phase 2: Transparency & Explainability (Next)
+### Phase 2: Transparency & Explainability (Complete)
 **Estimated Duration**: 2-3 weeks
+**Status**: Complete
 
 3. **Match Explanation UI** [T1]
-   - Status: Backlog
+   - Status: Complete ✅
    - Priority: P0
    - Description: Create detailed UI showing why matches were suggested
+   - Deliverable: `client/src/components/MatchScoreBreakdown.tsx`
    - Acceptance Criteria:
-     - Component shows individual scoring factors
-     - Confidence scores displayed
-     - User can expand/collapse details
-     - Visual indicators for each factor
+     - [x] Component shows individual scoring factors
+     - [x] Confidence scores displayed
+     - [x] User can expand/collapse details
+     - [x] Visual indicators for each factor
 
 4. **Scoring Breakdown Display** [T2]
-   - Status: Backlog
+   - Status: Complete ✅
    - Priority: P0
    - Dependencies: T1
    - Description: Show individual component scores in UI
    - Acceptance Criteria:
-     - Semantic score visible
-     - Tag overlap score visible
-     - Role match score visible
-     - Geo match score visible
-     - Relationship score visible
-     - Name match boost visible
+     - [x] Semantic score visible
+     - [x] Tag overlap score visible
+     - [x] Role match score visible
+     - [x] Geo match score visible
+     - [x] Relationship score visible
+     - [x] Name match boost visible
+     - [x] Personal affinity visible (new)
 
 5. **Confidence Score Display** [T3]
-   - Status: Backlog
+   - Status: Complete ✅
    - Priority: P0
    - Dependencies: T2
    - Description: Display confidence scores for each matching factor
+   - Deliverable: `client/src/components/MatchScoreBreakdown.tsx` + `matchFromDb` mapping
    - Acceptance Criteria:
-     - Confidence scores shown for each factor
-     - Visual confidence indicators (bars, colors)
-     - Tooltips explaining confidence calculation
+     - [x] Confidence scores shown for each factor
+     - [x] Visual confidence indicators (bars, colors)
+     - [x] Tooltips explaining confidence calculation
+     - [x] confidence_scores persisted in generate-matches upsert
+     - [x] matchFromDb maps score_breakdown, confidence_scores, match_version
 
 ### Phase 3: Algorithm Improvements
 **Estimated Duration**: 3-4 weeks
 
 6. **Embedding-Based Semantic Matching** [M1]
-   - Status: Backlog
+   - Status: Complete ✅
    - Priority: P0
    - Description: Replace keyword matching with embedding-based semantic similarity
+   - Deliverables:
+     - `supabase/functions/embed-contact/index.ts` (single + batch)
+     - `supabase/functions/embed-conversation/index.ts`
+     - Cosine similarity in `generate-matches/index.ts`
+     - Client wrappers in `edgeFunctions.ts`
    - Technical Notes:
-     - Use OpenAI embeddings or similar
-     - Store contact embeddings in database
-     - Calculate cosine similarity
-     - Update WEIGHTS to include embedding score
+     - Uses OpenAI text-embedding-3-small (1536 dimensions)
+     - Contact embeddings include bio, title, company, interests, expertise, portfolio
+     - Conversation embeddings from rich context (target_person, goals, domains, intent)
+     - Adaptive weights: 25% embedding when available, fallback to keyword-only
    - Acceptance Criteria:
-     - Embeddings generated for contacts
-     - Embeddings generated for conversations
-     - Semantic matching uses embeddings
-     - Performance acceptable (<500ms per match)
+     - [x] Embeddings generated for contacts (embed-contact, single + batch)
+     - [x] Embeddings generated for conversations (embed-conversation)
+     - [x] Semantic matching uses embeddings (cosine similarity in generate-matches)
+     - [x] Performance acceptable (cosine similarity is O(n) per contact, <500ms for typical contact list)
 
 7. **Temporal Factors** [M2]
    - Status: Backlog
@@ -257,6 +289,25 @@
 - Integration with external data sources
 - Mobile app support
 - API for third-party integrations
+
+---
+
+## Research: Conversation-from-Contact & Desktop (See docs/RESEARCH_CONVERSATION_AND_DESKTOP.md)
+
+**Start conversation from contact**
+- [x] One-click "Start conversation" from contact profile (opens recording flow with contact context + associates contact as participant).
+- [ ] Optional link to Google Meet / Calendar event so conversation syncs with meetings.
+- [ ] Notifications to intuitively begin conversation records (e.g. "Call with [Contact] in 15 min – start recording?").
+
+**Google Meet AI (optional use only)**
+- [ ] Research: Google Meet transcript, summary, and action-items APIs or export formats.
+- [ ] Optional import of Meet transcript/summary to supplement our Whisper pipeline; do not rely on Meet AI as required.
+
+**Desktop-first**
+- [ ] UX and flows optimized as a desktop tool; user explicitly starts recording (no required auto-capture).
+
+**Desktop app / browser plug-in (RESEARCH)**
+- [ ] **Research: Desktop app that plugs into browser or account** – Explore building a desktop application (e.g. Electron/Tauri) or browser extension that plugs into the user's browser or Google account. Evaluate: "plug into browser" vs "plug into account"; desktop app vs extension vs PWA; how each supports one-click "Start conversation," Meet/Calendar link, and notifications; recommendation or ranked options. See `docs/RESEARCH_CONVERSATION_AND_DESKTOP.md` §4.
 
 ## Estimation Guidelines
 - Small: 1-3 days

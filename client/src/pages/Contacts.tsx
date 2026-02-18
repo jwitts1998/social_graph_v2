@@ -6,9 +6,11 @@ import ContactCard from "@/components/ContactCard";
 import ContactDialog from "@/components/ContactDialog";
 import CsvUploadDialog from "@/components/CsvUploadDialog";
 import EnrichmentDialog from "@/components/EnrichmentDialog";
-import { Plus, Search, Upload, Users } from "lucide-react";
+import { Plus, Search, Upload, Users, Loader2, Lightbulb } from "lucide-react";
 import { useContacts, useContactsCount } from "@/hooks/useContacts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { embedContactBatch } from "@/lib/edgeFunctions";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Contacts() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -18,6 +20,8 @@ export default function Contacts() {
   const [showEnrichmentDialog, setShowEnrichmentDialog] = useState(false);
   const [editingContact, setEditingContact] = useState<any>(null);
   const [enrichingContact, setEnrichingContact] = useState<{ id: string; name: string } | null>(null);
+  const [batchEmbedding, setBatchEmbedding] = useState(false);
+  const { toast } = useToast();
   const CONTACTS_PER_PAGE = 50;
   
   const { data: contacts, isLoading } = useContacts();
@@ -64,6 +68,29 @@ export default function Contacts() {
             <h1 className="text-2xl md:text-3xl font-semibold">Contacts</h1>
           </div>
           <div className="flex gap-2 sm:gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={batchEmbedding}
+              onClick={async () => {
+                setBatchEmbedding(true);
+                try {
+                  const result = await embedContactBatch();
+                  toast({
+                    title: "Embedding complete",
+                    description: `Processed ${result.processed} contacts.${result.hasMore ? " More remaining — run again." : ""}`,
+                  });
+                } catch (err: any) {
+                  toast({ title: "Embedding failed", description: err.message, variant: "destructive" });
+                } finally {
+                  setBatchEmbedding(false);
+                }
+              }}
+              title="Generate AI embeddings for contacts without them (up to 50 at a time)"
+            >
+              {batchEmbedding ? <Loader2 className="w-4 h-4 sm:mr-2 animate-spin" /> : <Lightbulb className="w-4 h-4 sm:mr-2" />}
+              <span className="hidden sm:inline">{batchEmbedding ? "Embedding..." : "Embed All"}</span>
+            </Button>
             <Button 
               variant="outline" 
               size="sm"
@@ -188,6 +215,12 @@ export default function Contacts() {
                 checkSizeMin={contact.checkSizeMin || undefined}
                 checkSizeMax={contact.checkSizeMax || undefined}
                 investorNotes={contact.investorNotes || undefined}
+                education={contact.education || undefined}
+                careerHistory={contact.careerHistory || undefined}
+                personalInterests={contact.personalInterests || undefined}
+                expertiseAreas={contact.expertiseAreas || undefined}
+                portfolioCompanies={contact.portfolioCompanies || undefined}
+                dataCompletenessScore={contact.dataCompletenessScore || undefined}
                 onEdit={() => {
                   setEditingContact(contact);
                   setShowContactDialog(true);

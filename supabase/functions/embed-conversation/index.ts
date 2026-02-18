@@ -159,8 +159,11 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized: You do not own this conversation');
     }
     
-    // Build context text from rich fields
-    const contextText = buildContextText(conversation);
+    // Build context text from rich fields, with instruction prefix for asymmetric retrieval
+    const rawContext = buildContextText(conversation);
+    const contextText = rawContext
+      ? `Search query for finding relevant professional contacts: ${rawContext}`
+      : '';
     console.log('Context text:', contextText.substring(0, 200) + '...');
     
     if (contextText.length === 0) {

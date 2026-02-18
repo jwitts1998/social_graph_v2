@@ -12,6 +12,7 @@ interface ScoreBreakdown {
   roleMatch: number;
   geoMatch: number;
   relationship: number;
+  personalAffinity?: number;
   nameMatch?: number;
 }
 
@@ -63,6 +64,11 @@ const COMPONENT_INFO: Record<string, { name: string; description: string; weight
     description: "Your existing relationship strength with this contact (0-100 scale)",
     weight: 0.10,
   },
+  personalAffinity: {
+    name: "Personal Affinity",
+    description: "Shared personal context: overlapping education, interests, portfolio companies, or expertise areas",
+    weight: 0.15,
+  },
   nameMatch: {
     name: "Name Mentioned",
     description: "Contact's name was explicitly mentioned in the conversation (bonus boost)",
@@ -106,6 +112,11 @@ export default function MatchScoreBreakdown({
   
   // Add other components
   components.push("semantic", "tagOverlap", "roleMatch", "geoMatch", "relationship");
+
+  // Add personal affinity if present
+  if (scoreBreakdown.personalAffinity !== undefined && scoreBreakdown.personalAffinity > 0) {
+    components.push("personalAffinity");
+  }
 
   // Add name match if present
   if (scoreBreakdown.nameMatch && scoreBreakdown.nameMatch > 0) {

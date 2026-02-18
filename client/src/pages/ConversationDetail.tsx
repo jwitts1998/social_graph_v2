@@ -16,7 +16,7 @@ import { useMatchSuggestions, useUpdateMatchStatus } from "@/hooks/useMatches";
 import { useProfile } from "@/hooks/useProfile";
 import { format } from "date-fns";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { extractEntities, embedConversation, generateMatches } from "@/lib/edgeFunctions";
 
 interface PromisedIntro {
   id: string;
@@ -43,55 +43,11 @@ export default function ConversationDetail() {
   const { data: profile } = useProfile();
   const updateStatus = useUpdateMatchStatus(conversationId);
 
-  // Define regenerateMatches mutation at the top with all other hooks
   const regenerateMatches = useMutation({
     mutationFn: async (convId: string) => {
-      // Get the user's auth token from Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      const authToken = session?.access_token;
-
-      if (!authToken) {
-        throw new Error('Not authenticated');
-      }
-
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authToken}`,
-      };
-
-      const response = await fetch(`/api/supabase/functions/v1/extract-entities`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ conversationId: convId }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to extract entities');
-      }
-
-      const embedResponse = await fetch(`/api/supabase/functions/v1/embed-conversation`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ conversationId: convId }),
-      });
-
-      if (!embedResponse.ok) {
-        console.warn('Embedding generation failed, but continuing...');
-      }
-
-      const matchResponse = await fetch(`/api/supabase/functions/v1/generate-matches`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ conversationId: convId }),
-      });
-
-      if (!matchResponse.ok) {
-        const errorData = await matchResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to generate matches');
-      }
-
-      return await matchResponse.json();
+      await extractEntities(convId);
+      await embedConversation(convId);
+      return await generateMatches(convId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
@@ -338,10 +294,15 @@ export default function ConversationDetail() {
                         investorNotes: match.contact?.investorNotes || null,
                         contactType: match.contact?.contactType || null,
                       }}
+                      contactId={match.contactId}
                       score={match.score as (1 | 2 | 3)}
                       reasons={(match.reasons as string[]) || []}
                       status={match.status}
                       matchId={match.id}
+                      rawScore={(match as any).rawScore ?? undefined}
+                      scoreBreakdown={(match.scoreBreakdown && Object.keys(match.scoreBreakdown).length > 0) ? match.scoreBreakdown as any : undefined}
+                      confidenceScores={(match.confidenceScores && Object.keys(match.confidenceScores).length > 0) ? match.confidenceScores as any : undefined}
+                      matchVersion={match.matchVersion ?? undefined}
                       onMakeIntro={() => handleMakeIntro(match.id, match.contact?.name || 'Unknown')}
                       onMaybe={() => handleUpdateStatus(match.id, 'dismissed')}
                       onDismiss={() => handleUpdateStatus(match.id, 'dismissed')}

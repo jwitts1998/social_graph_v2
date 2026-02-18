@@ -108,6 +108,21 @@ export const contacts = pgTable("contacts", {
   bioEmbedding: text("bio_embedding"), // vector(1536) stored as text for Drizzle compatibility
   thesisEmbedding: text("thesis_embedding"), // vector(1536) stored as text for Drizzle compatibility
   
+  // Enrichment fields (v1.2) - Rich profile data
+  education: jsonb("education").default(sql`'[]'::jsonb`), // [{school, degree, field, year}]
+  careerHistory: jsonb("career_history").default(sql`'[]'::jsonb`), // [{company, role, years, description}]
+  personalInterests: text("personal_interests").array().default(sql`ARRAY[]::text[]`), // ["rock climbing", "jazz"]
+  expertiseAreas: text("expertise_areas").array().default(sql`ARRAY[]::text[]`), // ["marketplaces", "PLG"]
+  portfolioCompanies: text("portfolio_companies").array().default(sql`ARRAY[]::text[]`), // ["Stripe", "Coinbase"]
+  
+  // Enrichment metadata
+  lastEnrichedAt: timestamp("last_enriched_at"),
+  enrichmentSource: text("enrichment_source"), // 'hunter', 'pdl', 'apollo', 'serper', 'manual'
+  dataCompletenessScore: integer("data_completeness_score").default(0), // 0-100
+  enrichmentConfidence: jsonb("enrichment_confidence"), // Per-field confidence: {title: "high", bio: "medium", ...}
+  thesisSource: text("thesis_source"), // 'extracted', 'portfolio-inferred', 'minimal', 'ai-inferred'
+  verifiedFields: text("verified_fields").array().default(sql`ARRAY[]::text[]`), // Fields manually edited by user
+  
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -305,6 +320,21 @@ export const matchFeedback = pgTable("match_feedback", {
 });
 
 // ============================================================================
+// ENRICHMENT CORRECTIONS LOG (Phase 4) - Track user corrections to enriched data
+// ============================================================================
+
+export const enrichmentCorrections = pgTable("enrichment_corrections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => contacts.id, { onDelete: 'cascade' }),
+  profileId: uuid("profile_id").notNull().references(() => profiles.id, { onDelete: 'cascade' }),
+  fieldName: text("field_name").notNull(),
+  oldValue: text("old_value"),
+  newValue: text("new_value"),
+  enrichmentSource: text("enrichment_source"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ============================================================================
 // INSERT SCHEMAS
 // ============================================================================
 
@@ -397,6 +427,11 @@ export const insertMatchFeedbackSchema = createInsertSchema(matchFeedback).omit(
   createdAt: true,
 });
 
+export const insertEnrichmentCorrectionSchema = createInsertSchema(enrichmentCorrections).omit({
+  id: true,
+  createdAt: true,
+});
+
 // ============================================================================
 // NOTIFICATION LOG
 // ============================================================================
@@ -471,6 +506,9 @@ export type InsertContactAlias = z.infer<typeof insertContactAliasSchema>;
 
 export type MatchFeedback = typeof matchFeedback.$inferSelect;
 export type InsertMatchFeedback = z.infer<typeof insertMatchFeedbackSchema>;
+
+export type EnrichmentCorrection = typeof enrichmentCorrections.$inferSelect;
+export type InsertEnrichmentCorrection = z.infer<typeof insertEnrichmentCorrectionSchema>;
 
 export type NotificationLog = typeof notificationLog.$inferSelect;
 export type InsertNotificationLog = z.infer<typeof insertNotificationLogSchema>;

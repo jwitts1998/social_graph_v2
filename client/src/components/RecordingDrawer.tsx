@@ -45,6 +45,7 @@ interface Suggestion {
     title: string | null;
     relationshipStrength?: number | null;
   };
+  contactId?: string;
   score: 1 | 2 | 3;
   reasons: string[];
   matchId?: string;
@@ -55,9 +56,13 @@ interface RecordingDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   eventId?: string | null;
+  /** Pre-fill meeting title when opening from a contact (e.g. "Conversation with Jane Doe") */
+  defaultTitle?: string | null;
+  /** When started from a contact profile, associate this contact with the conversation */
+  defaultContactId?: string | null;
 }
 
-export default function RecordingDrawer({ open, onOpenChange, eventId }: RecordingDrawerProps) {
+export default function RecordingDrawer({ open, onOpenChange, eventId, defaultTitle, defaultContactId }: RecordingDrawerProps) {
   const [title, setTitle] = useState("");
   const [consentChecked, setConsentChecked] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -74,6 +79,13 @@ export default function RecordingDrawer({ open, onOpenChange, eventId }: Recordi
   const [, setLocation] = useLocation();
   const createConversation = useCreateConversation();
   const updateConversation = useUpdateConversation();
+
+  // Pre-fill title when opened from contact profile ("Start conversation")
+  useEffect(() => {
+    if (open && defaultTitle) {
+      setTitle(defaultTitle);
+    }
+  }, [open, defaultTitle]);
 
   const handleAudioData = useCallback(async (audioBlob: Blob) => {
     if (!conversationIdRef.current) return;
@@ -155,6 +167,25 @@ export default function RecordingDrawer({ open, onOpenChange, eventId }: Recordi
     console.log('✅ Conversation created:', result.id);
     setConversationId(result.id);
     conversationIdRef.current = result.id;
+
+    // Associate contact as participant when started from Contact Profile
+    if (defaultContactId) {
+      try {
+        const { error: participantError } = await (supabase as any)
+          .from('conversation_participants')
+          .upsert(
+            { conversation_id: result.id, contact_id: defaultContactId },
+            { onConflict: 'conversation_id,contact_id' }
+          );
+        if (participantError) {
+          console.error('Failed to add contact as participant:', participantError);
+        } else {
+          console.log('✅ Contact linked as participant:', defaultContactId);
+        }
+      } catch (err) {
+        console.error('Error adding participant:', err);
+      }
+    }
 
     console.log('🎤 Starting audio recorder...');
     await audioControls.startRecording();
@@ -316,6 +347,7 @@ export default function RecordingDrawer({ open, onOpenChange, eventId }: Recordi
               title: contact.title,
               relationshipStrength: contact.relationship_strength,
             },
+            contactId: match.contact_id as string,
             score: (match.score || 1) as 1 | 2 | 3,
             reasons: match.reasons || [],
             matchId: match.id,
@@ -505,6 +537,7 @@ export default function RecordingDrawer({ open, onOpenChange, eventId }: Recordi
                       <SuggestionCard 
                         key={suggestion.matchId || idx} 
                         contact={suggestion.contact}
+                        contactId={suggestion.contactId}
                         score={suggestion.score}
                         reasons={suggestion.reasons}
                         matchId={suggestion.matchId}
