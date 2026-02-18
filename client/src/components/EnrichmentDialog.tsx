@@ -123,15 +123,19 @@ export default function EnrichmentDialog({
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
                     <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
-                    Searching Google for LinkedIn, Crunchbase, company websites
+                    Searching Google, LinkedIn, Crunchbase
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
-                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-200"></span>
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-100"></span>
                     Extracting bio, education, career history
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
-                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-400"></span>
-                    Finding personal interests and expertise areas
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-200"></span>
+                    Finding expertise and personal interests
+                  </p>
+                  <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-300"></span>
+                    Analyzing portfolio companies (for investors)
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground pt-2">

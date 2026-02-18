@@ -46,6 +46,7 @@ interface Suggestion {
     company: string | null;
     title: string | null;
   };
+  contactId?: string;
   score: 1 | 2 | 3;
   reasons: string[];
 }
@@ -230,6 +231,7 @@ export default function Record() {
               company: contact.company,
               title: contact.title,
             },
+            contactId: match.contact_id as string,
             score: (match.score || 1) as 1 | 2 | 3,
             reasons: match.reasons || [],
           };
@@ -620,6 +622,7 @@ export default function Record() {
                     <SuggestionCard
                       key={idx}
                       contact={suggestion.contact}
+                      contactId={suggestion.contactId}
                       score={suggestion.score}
                       reasons={suggestion.reasons}
                       onMakeIntro={() => console.log('Make intro', suggestion.contact.name)}
@@ -672,6 +675,7 @@ export default function Record() {
                   <SuggestionCard
                     key={idx}
                     contact={suggestion.contact}
+                    contactId={suggestion.contactId}
                     score={suggestion.score}
                     reasons={suggestion.reasons}
                     onMakeIntro={() => console.log('Make intro', suggestion.contact.name)}

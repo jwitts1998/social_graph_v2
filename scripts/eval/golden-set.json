@@ -1,0 +1,98 @@
+{
+  "_meta": {
+    "description": "Golden evaluation set for matching algorithm quality. Labels: 1=positive (should match), 0=negative (should NOT match). Conversations and contacts referenced by their [SEED] names; the eval script resolves them to UUIDs at runtime.",
+    "updated": "2026-02-13"
+  },
+  "labels": [
+    {
+      "conversation": "[SEED] Biotech Seed Round Discussion",
+      "contact": "Dr. Elena Rodriguez",
+      "label": 1,
+      "note": "Perfect semantic + tag match: biotech, drug discovery, seed stage, SF geo, Stanford affinity"
+    },
+    {
+      "conversation": "[SEED] Biotech Seed Round Discussion",
+      "contact": "Dr. Priya Mehta",
+      "label": 1,
+      "note": "AI/ML overlap + Stanford education affinity; weaker than Elena but still positive"
+    },
+    {
+      "conversation": "[SEED] Biotech Seed Round Discussion",
+      "contact": "Marcus Chen",
+      "label": 0,
+      "note": "Tag overlap via FinTech thesis but bio is real estate; should rank low"
+    },
+    {
+      "conversation": "[SEED] Biotech Seed Round Discussion",
+      "contact": "James Patterson",
+      "label": 0,
+      "note": "Negative control: climate tech only, zero biotech interest"
+    },
+    {
+      "conversation": "[SEED] Biotech Seed Round Discussion",
+      "contact": "Alex Kumar",
+      "label": 0,
+      "note": "Engineering hire candidate, not relevant to biotech fundraising"
+    },
+    {
+      "conversation": "[SEED] Fintech Investor Introduction",
+      "contact": "Robert Smith",
+      "label": 1,
+      "note": "Name mentioned (Bob Smith → Robert Smith) + fintech angel"
+    },
+    {
+      "conversation": "[SEED] Fintech Investor Introduction",
+      "contact": "Marcus Chen",
+      "label": 0,
+      "note": "FinTech thesis tags but real estate bio; weak match"
+    },
+    {
+      "conversation": "[SEED] Fintech Investor Introduction",
+      "contact": "Alex Kumar",
+      "label": 1,
+      "note": "Payments/fintech engineering expertise; relevant for CTO intro even though conv is fundraising"
+    },
+    {
+      "conversation": "[SEED] Fintech Investor Introduction",
+      "contact": "James Patterson",
+      "label": 0,
+      "note": "Climate tech only, no fintech relevance"
+    },
+    {
+      "conversation": "[SEED] Office Logistics Discussion",
+      "contact": "Dr. Elena Rodriguez",
+      "label": 0,
+      "note": "No match expected — conversation has no investment/tech content"
+    },
+    {
+      "conversation": "[SEED] Office Logistics Discussion",
+      "contact": "James Patterson",
+      "label": 0,
+      "note": "No match expected"
+    },
+    {
+      "conversation": "[SEED] AI Startup Seed Discussion",
+      "contact": "Dr. Priya Mehta",
+      "label": 1,
+      "note": "Best match: AI/ML thesis, Stanford education, portfolio overlap (Anthropic, Scale AI), shared interests (rock climbing)"
+    },
+    {
+      "conversation": "[SEED] AI Startup Seed Discussion",
+      "contact": "Dr. Elena Rodriguez",
+      "label": 1,
+      "note": "AI/ML sector overlap + Stanford education; weaker than Priya but positive"
+    },
+    {
+      "conversation": "[SEED] AI Startup Seed Discussion",
+      "contact": "James Patterson",
+      "label": 0,
+      "note": "Negative control: climate focus only"
+    },
+    {
+      "conversation": "[SEED] AI Startup Seed Discussion",
+      "contact": "Marcus Chen",
+      "label": 0,
+      "note": "Real estate investor, no AI/ML relevance"
+    }
+  ]
+}

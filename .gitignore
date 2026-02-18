@@ -5,6 +5,15 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
+# Environment
+.env
+.env.*
+
+# Cursor IDE
+.cursor/*
+!.cursor/agents/
+
 # MCP Server
 mcp-supabase/node_modules
-mcp-supabase/dist
+mcp-supabase/distGET_API_KEYS.md
+test-social-enrichment.sh

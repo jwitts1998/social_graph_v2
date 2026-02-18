@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
       // Batch mode: process all contacts without embeddings
       const { data: contacts, error: fetchError } = await supabaseService
         .from('contacts')
-        .select('id, name, bio, investor_notes, title, company')
+        .select('id, name, bio, investor_notes, title, company, personal_interests, expertise_areas, portfolio_companies')
         .eq('owned_by_profile', user.id)
         .is('bio_embedding', null)
         .limit(50); // Process 50 at a time
@@ -92,15 +92,24 @@ Deno.serve(async (req) => {
       
       for (const contact of contacts) {
         try {
-          // Build text for bio embedding
-          const bioText = [
+          // Build text for bio embedding with instruction prefix for asymmetric retrieval
+          const rawBio = [
             contact.bio,
             contact.title ? `Title: ${contact.title}` : '',
             contact.company ? `Company: ${contact.company}` : '',
+            contact.personal_interests?.length ? `Interests: ${contact.personal_interests.join(', ')}` : '',
+            contact.expertise_areas?.length ? `Expertise: ${contact.expertise_areas.join(', ')}` : '',
+            contact.portfolio_companies?.length ? `Portfolio: ${contact.portfolio_companies.join(', ')}` : '',
           ].filter(Boolean).join('\n');
-          
-          // Build text for thesis embedding
-          const thesisText = contact.investor_notes || '';
+          const bioText = rawBio
+            ? `Professional profile for networking and introductions: ${rawBio}`
+            : '';
+
+          // Build text for thesis embedding with instruction prefix
+          const rawThesis = contact.investor_notes || '';
+          const thesisText = rawThesis
+            ? `Investment thesis and focus areas: ${rawThesis}`
+            : '';
           
           const bioEmbedding = bioText ? await generateEmbedding(bioText, openaiApiKey) : null;
           const thesisEmbedding = thesisText ? await generateEmbedding(thesisText, openaiApiKey) : null;
@@ -149,7 +158,7 @@ Deno.serve(async (req) => {
     // Verify contact ownership
     const { data: contact, error: fetchError } = await supabaseService
       .from('contacts')
-      .select('id, name, bio, investor_notes, title, company, owned_by_profile')
+      .select('id, name, bio, investor_notes, title, company, owned_by_profile, personal_interests, expertise_areas, portfolio_companies')
       .eq('id', contactId)
       .single();
     
@@ -161,15 +170,24 @@ Deno.serve(async (req) => {
       throw new Error('Forbidden: You do not own this contact');
     }
     
-    // Build text for bio embedding
-    const bioText = [
+    // Build text for bio embedding with instruction prefix for asymmetric retrieval
+    const rawBio = [
       contact.bio,
       contact.title ? `Title: ${contact.title}` : '',
       contact.company ? `Company: ${contact.company}` : '',
+      contact.personal_interests?.length ? `Interests: ${contact.personal_interests.join(', ')}` : '',
+      contact.expertise_areas?.length ? `Expertise: ${contact.expertise_areas.join(', ')}` : '',
+      contact.portfolio_companies?.length ? `Portfolio: ${contact.portfolio_companies.join(', ')}` : '',
     ].filter(Boolean).join('\n');
-    
-    // Build text for thesis embedding  
-    const thesisText = contact.investor_notes || '';
+    const bioText = rawBio
+      ? `Professional profile for networking and introductions: ${rawBio}`
+      : '';
+
+    // Build text for thesis embedding with instruction prefix
+    const rawThesis = contact.investor_notes || '';
+    const thesisText = rawThesis
+      ? `Investment thesis and focus areas: ${rawThesis}`
+      : '';
     
     console.log(`Generating embeddings for contact: ${contact.name}`);
     console.log(`Bio text length: ${bioText.length}, Thesis text length: ${thesisText.length}`);

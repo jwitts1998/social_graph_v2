@@ -109,34 +109,38 @@ function normalizeLinkedInUrl(url: string): string {
 
 This system matches contacts from the user's network against conversation content to suggest potential introductions.
 
-### Weighted Scoring Algorithm (v1.1-transparency)
+### Weighted Scoring Algorithm (v1.3-coldstart)
 
 The algorithm uses **adaptive weights** that change based on data availability:
 
-#### With Embeddings Available (Preferred - v1.1)
+#### With Embeddings Available (Preferred - v1.2)
 When conversation and contact embeddings exist, the system uses semantic AI matching:
 
 ```javascript
 const WEIGHTS = {
-  embedding: 0.30,     // NEW: Deep semantic similarity via OpenAI embeddings
-  semantic: 0.10,      // REDUCED: Keyword fallback
-  tagOverlap: 0.30,    // REDUCED: Still important for thesis matching
-  roleMatch: 0.10,     // REDUCED: Investor/role type matching
-  geoMatch: 0.10,      // SAME: Location overlap
-  relationship: 0.10,  // REDUCED: Existing relationship strength
+  embedding: 0.25,         // Semantic similarity via embeddings (bio + thesis)
+  semantic: 0.10,          // Keyword fallback
+  tagOverlap: 0.20,        // Tag/thesis overlap (confidence-weighted Jaccard)
+  roleMatch: 0.10,         // Role/investor type matching
+  geoMatch: 0.05,          // Geographic matching
+  relationship: 0.10,      // Relationship strength
+  personalAffinity: 0.15,  // Education, interests, expertise overlap
+  checkSize: 0.05,         // Check-size range fit (investors)
 };
 ```
 
-#### Without Embeddings (Fallback - v1.0)
-When embeddings are unavailable (missing `OPENAI_API_KEY`), falls back to keyword matching:
+#### Without Embeddings (Fallback)
+When embeddings are unavailable, falls back to keyword matching:
 
 ```javascript
 const WEIGHTS = {
-  semantic: 0.20,      // Original: Keyword matching from bio/title/notes
-  tagOverlap: 0.35,    // Original: Jaccard similarity on sectors/stages/geos
-  roleMatch: 0.15,     // Original: Investor type matching
-  geoMatch: 0.10,      // Original: Location overlap
-  relationship: 0.20,  // Original: Existing relationship strength score
+  semantic: 0.15,          // Keyword matching
+  tagOverlap: 0.25,        // Tag/thesis overlap (confidence-weighted Jaccard)
+  roleMatch: 0.15,         // Role/investor type matching
+  geoMatch: 0.05,          // Geographic matching
+  relationship: 0.15,      // Relationship strength
+  personalAffinity: 0.20,  // Education, interests, expertise overlap
+  checkSize: 0.05,         // Check-size range fit (investors)
 };
 ```
 
@@ -144,22 +148,31 @@ const WEIGHTS = {
 - "AI-powered drug discovery" matches "therapeutics platform" (semantic)
 - vs. only matching exact keyword "drug discovery" (keyword)
 
-### Score Calculation
+### Score Calculation (v1.3 — cold-start normalization)
 
 ```javascript
-// Adaptive calculation based on embedding availability
-let rawScore = hasEmbeddings
-  ? WEIGHTS.embedding * matchDetails.embeddingScore +
-    WEIGHTS.semantic * matchDetails.semanticScore +
-    WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
-    WEIGHTS.roleMatch * matchDetails.roleMatchScore +
-    WEIGHTS.geoMatch * matchDetails.geoMatchScore +
-    WEIGHTS.relationship * matchDetails.relationshipScore
-  : WEIGHTS.semantic * matchDetails.semanticScore +
-    WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
-    WEIGHTS.roleMatch * matchDetails.roleMatchScore +
-    WEIGHTS.geoMatch * matchDetails.geoMatchScore +
-    WEIGHTS.relationship * matchDetails.relationshipScore;
+// Determine which scoring components have data backing them
+const dataAvailable = {
+  embedding: !!(contactBioEmb || contactThesisEmb),
+  semantic: true,
+  tagOverlap: contactTags.length > 0,
+  roleMatch: true,
+  geoMatch: true,
+  relationship: contact.relationship_strength != null && contact.relationship_strength !== 50,
+  personalAffinity: !!(contact.education?.length || contact.personal_interests?.length
+    || contact.expertise_areas?.length || contact.portfolio_companies?.length),
+  checkSize: !!(contact.is_investor && (contact.check_size_min || contact.check_size_max)),
+};
+
+// Renormalize weights to only sum over available components
+const activeComponents = Object.keys(WEIGHTS).filter(k => dataAvailable[k]);
+const activeWeightSum = activeComponents.reduce((s, k) => s + WEIGHTS[k], 0);
+const scale = activeWeightSum > 0 ? 1.0 / activeWeightSum : 1.0;
+
+let rawScore = 0;
+for (const k of activeComponents) {
+  rawScore += WEIGHTS[k] * scale * componentScores[k];
+}
 
 // NAME MATCH BOOST - Add up to 0.3 to raw score for name mentions
 if (matchDetails.nameMatch) {
@@ -169,6 +182,8 @@ if (matchDetails.nameMatch) {
 // Clamp raw score to 0-1
 rawScore = Math.min(Math.max(rawScore, 0), 1);
 ```
+
+This ensures a contact missing embeddings, tags, and check-size data isn't penalized for missing 50%+ of the weight budget. Instead, available components are rescaled to use the full [0, 1] range.
 
 ### Star Rating Thresholds
 
@@ -190,38 +205,36 @@ if (starScore >= 1) {
 
 ### Individual Scoring Components
 
-#### 2.0 Embedding Score (30% weight - v1.1 only)
+#### 2.0 Embedding Score (25% weight - v1.2)
 
-**NEW in v1.1-transparency**: Deep semantic similarity using OpenAI text-embedding-3-small (1536 dimensions).
+Deep semantic similarity using OpenAI text-embedding-3-small (1536 dimensions). Uses the **best** of bio and thesis embeddings:
 
 ```javascript
-// Generate embeddings for conversation context and contact bios
-const conversationEmbedding = await generateEmbedding(conversationContext);
-const contactEmbedding = contact.bio_embedding; // pre-computed
+const contactBioEmb = embeddingToArray(contact.bio_embedding);
+const contactThesisEmb = embeddingToArray(contact.thesis_embedding);
 
-// Calculate cosine similarity
-function cosineSimilarity(vec1, vec2) {
-  let dotProduct = 0, norm1 = 0, norm2 = 0;
-  
-  for (let i = 0; i < vec1.length; i++) {
-    dotProduct += vec1[i] * vec2[i];
-    norm1 += vec1[i] * vec1[i];
-    norm2 += vec2[i] * vec2[i];
-  }
-  
-  return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+if (hasEmbeddings && conversationEmbedding) {
+  let bioSim = 0, thesisSim = 0;
+  if (contactBioEmb) bioSim = cosineSimilarity(conversationEmbedding, contactBioEmb);
+  if (contactThesisEmb) thesisSim = cosineSimilarity(conversationEmbedding, contactThesisEmb);
+  matchDetails.embeddingScore = Math.max(bioSim, thesisSim);
 }
-
-matchDetails.embeddingScore = cosineSimilarity(
-  conversationEmbedding, 
-  contactEmbedding
-);
 ```
+
+**Embedding generation (with instruction prefixes for asymmetric retrieval):**
+- Contact embeddings: `embed-contact` edge function (single + batch mode)
+  - `bio_embedding`: `"Professional profile for networking and introductions: "` + bio, title, company, personal_interests, expertise_areas, portfolio_companies
+  - `thesis_embedding`: `"Investment thesis and focus areas: "` + investor_notes
+  - Model: `text-embedding-3-small` (1536 dimensions)
+- Conversation embeddings: `embed-conversation` edge function
+  - `"Search query for finding relevant professional contacts: "` + context from target_person, goals_and_needs, domains_and_topics, matching_intent
+- Client wrappers: `embedContact()`, `embedContactBatch()`, `embedConversation()` in `edgeFunctions.ts`
+- **Re-embedding required** when prefixes change — use the "Embed All" UI button or run a one-time batch.
 
 **When embeddings are available**:
 - Captures semantic meaning beyond keywords
-- "AI drug discovery" matches "therapeutics platform" 
-- Higher quality matches with better precision
+- "AI drug discovery" matches "therapeutics platform"
+- Thesis embedding allows investor-specific matching (investor_notes content)
 
 **When embeddings are not available**:
 - Falls back to keyword matching (semantic score)
@@ -254,44 +267,28 @@ matchDetails.semanticScore = allSearchTerms.length > 0
   : 0;
 ```
 
-#### 2.2 Tag Overlap Score (35% weight)
+#### 2.2 Tag Overlap Score (20% weight)
 
-Uses Jaccard similarity between conversation tags and contact tags:
+Uses confidence-weighted Jaccard similarity between conversation tags and contact tags. Entity confidence from extraction weights each tag's contribution:
 
 ```javascript
-// Build contact tags from theses and profile
-const contactTags: string[] = [];
-const theses = contact.theses || [];
+// Build weighted entities from conversation_entities (with confidence)
+const weightedEntities = entities
+  .filter(e => ['sector', 'stage', 'geo'].includes(e.entity_type))
+  .map(e => ({ value: e.value, weight: parseFloat(e.confidence) || 0.5 }));
 
-for (const thesis of theses) {
-  contactTags.push(...(thesis.sectors || []));
-  contactTags.push(...(thesis.stages || []));
-  contactTags.push(...(thesis.geos || []));
+// Rich-context keywords get default confidence of 0.7
+for (const kw of richKeywords) {
+  weightedEntities.push({ value: kw, weight: 0.7 });
 }
 
-// Add contact type tags
-if (contact.contact_type) {
-  contactTags.push(...contact.contact_type);
-}
-if (contact.is_investor) {
-  contactTags.push('investor');
-}
-
-// Extract keywords from bio/title/investor_notes
-const investmentTerms = [
-  'venture', 'capital', 'seed', 'series a', 'series b', 'pre-seed', 
-  'biotech', 'fintech', 'healthtech', 'saas', 'ai', 'ml', 'deep tech', 
-  'climate', 'enterprise', 'b2b', 'b2c', 'consumer', 'healthcare', 'life sciences'
-];
-
-for (const term of investmentTerms) {
-  if (bioText.includes(term) || titleText.includes(term) || notesText.includes(term)) {
-    contactTags.push(term);
-  }
-}
-
-matchDetails.tagOverlapScore = jaccardSimilarity(conversationTags, contactTags);
+// Scoring uses weightedJaccardSimilarity when confidence data available
+matchDetails.tagOverlapScore = weightedEntities.length > 0
+  ? weightedJaccardSimilarity(weightedEntities, contactTags)
+  : jaccardSimilarity(conversationTags, contactTags);
 ```
+
+Contact tags are built from theses (sectors, stages, geos), contact_type, and investment keywords extracted from bio/title/notes.
 
 #### 2.3 Role Match Score (15% weight)
 
@@ -665,9 +662,42 @@ match_suggestions (
   raw_score FLOAT,            -- 0.0-1.0 weighted score
   reasons TEXT[],
   ai_explanation TEXT,
+  score_breakdown JSONB,      -- Individual component scores
+  confidence_scores JSONB,    -- Confidence per component (0-1)
+  match_version TEXT,         -- Algorithm version tag
   ...
 )
 ```
+
+### Score Breakdown (JSONB)
+
+Persisted per match and shown in the UI breakdown component:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `embedding` | float (optional) | Embedding-based semantic similarity — max of bio and thesis (when available) |
+| `semantic` | float | Keyword matching score |
+| `tagOverlap` | float | Confidence-weighted Jaccard similarity of tags |
+| `roleMatch` | float | Role/type alignment |
+| `geoMatch` | float | Geographic proximity |
+| `relationship` | float | Existing relationship strength |
+| `personalAffinity` | float | Shared education, interests, portfolio, expertise |
+| `checkSize` | float | Check-size range fit (investors only) |
+| `nameMatch` | float (optional) | Name mention boost |
+| `_available` | object | Map of component → boolean indicating which components had data (for cold-start debugging) |
+
+### Confidence Scores (JSONB)
+
+Persisted alongside `score_breakdown`; each value 0-1:
+
+| Field | Description |
+|-------|-------------|
+| `semantic` | Confidence in keyword match (based on # of keywords matched) |
+| `tagOverlap` | Confidence in tag comparison (based on tag count) |
+| `roleMatch` | Confidence in role alignment |
+| `geoMatch` | Confidence in location data |
+| `relationship` | Confidence in relationship data |
+| `overall` | Weighted overall confidence |
 
 ---
 
@@ -677,7 +707,10 @@ match_suggestions (
 - **v1.1** - Added fuzzy name matching with nicknames
 - **v1.2** - Increased tag overlap weight, added AI explanations
 - **v1.3** - Added URL validation for CSV imports
+- **v1.1-transparency** - Added score_breakdown, confidence_scores, match_version, personalAffinity factor
+- **v1.2-signals** - Added thesis_embedding in scoring (max of bio + thesis), checkSizeFit (5% weight), entity confidence weighting for tag overlap via weightedJaccardSimilarity, offline evaluation pipeline (golden set, precision@k, weight tuning)
+- **v1.3-coldstart** - Cold-start weight normalization (renormalize weights per-contact for missing data), instruction prefixes for asymmetric embedding retrieval, MRR and NDCG@5 eval metrics with 90% bootstrap CIs, pairwise logistic regression ranker in tune-weights
 
 ---
 
-*Last updated: January 2026*
+*Last updated: February 2026*

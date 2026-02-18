@@ -136,3 +136,21 @@ Deno.serve(async (req) => {
 - Add more sophisticated name matching (fuzzy, phonetic)
 - Improve geographic matching with location normalization
 - Add temporal factors (recent interactions, time-sensitive needs)
+
+## Multi-Agent Development System
+
+This project uses a multi-agent development system for coordinated, quality-driven development.
+
+### Key References
+- **Agent Roles**: See `AGENTS.md` for specialized agent definitions, responsibilities, and when to use each agent.
+- **Task Tracking**: See `tasks.yml` (portfolio-level) and `tasks/*.yml` (per-feature) for task-driven work. Tasks include `agent_roles` fields that map to agents in `AGENTS.md`.
+- **Workflow**: See `docs/workflow/MULTI_AGENT_WORKFLOW.md` for agent collaboration patterns and `docs/workflow/DEVELOPMENT_WORKFLOW.md` for general development process.
+- **Subagent Configs**: See `.cursor/agents/` for specialized subagent prompts (code-reviewer, designer, test-writer, etc.).
+
+### Agent Workflow for Social Graph
+1. **Shared Types Agent** → Define or update types in `shared/schema.ts`
+2. **Supabase Agent** → Implement Edge Functions in `supabase/functions/`
+3. **Schema / Data Agent** → Migrations, RLS policies, Drizzle types
+4. **Frontend Agent** → React components, hooks, TanStack Query integration
+5. **Testing Agent** → Tests across the full stack
+6. **Matching / Entity Agent** → Any changes to matching algorithm or entity extraction (always update `docs/MATCHING_LOGIC.md`)

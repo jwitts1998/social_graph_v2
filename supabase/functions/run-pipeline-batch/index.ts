@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getEnrichmentPriorityScore } from "../_shared/data-quality.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -173,14 +174,29 @@ async function checkForMoreWork(supabase: any, userId: string) {
 async function processEnrichmentBatch(supabase: any, pipeline: any, openaiKey: string, startTime: number) {
   const userId = pipeline.owned_by_profile;
 
+  // Fetch more candidates than BATCH_SIZE so we can sort by priority
   const { data: contacts, error } = await supabase
     .from("contacts")
-    .select("id, name, company, title, bio")
+    .select("id, name, company, title, bio, is_investor, contact_type, linkedin_url, email, data_completeness_score")
     .eq("owned_by_profile", userId)
     .not("name", "is", null)
     .is("bio", null)
-    .order("id")
-    .limit(BATCH_SIZE);
+    .order("data_completeness_score", { ascending: true, nullsFirst: true })
+    .limit(BATCH_SIZE * 4);
+
+  if (error) throw error;
+
+  if (!contacts || contacts.length === 0) {
+    return { processed: 0, succeeded: 0, failed: 0, completed: true };
+  }
+
+  // Sort by priority (investors and contacts with LinkedIn first)
+  contacts.sort((a: any, b: any) =>
+    getEnrichmentPriorityScore(b) - getEnrichmentPriorityScore(a)
+  );
+
+  // Take only BATCH_SIZE after sorting
+  const prioritizedContacts = contacts.slice(0, BATCH_SIZE);
 
   if (error) throw error;
 
@@ -191,7 +207,7 @@ async function processEnrichmentBatch(supabase: any, pipeline: any, openaiKey: s
   let succeeded = 0;
   let failed = 0;
 
-  for (const contact of contacts) {
+  for (const contact of prioritizedContacts) {
     if (Date.now() - startTime > MAX_TIME_MS) break;
 
     try {
@@ -208,7 +224,7 @@ async function processEnrichmentBatch(supabase: any, pipeline: any, openaiKey: s
     }
   }
 
-  return { processed: contacts.length, succeeded, failed, completed: contacts.length < BATCH_SIZE };
+  return { processed: prioritizedContacts.length, succeeded, failed, completed: contacts.length < BATCH_SIZE };
 }
 
 async function processExtractionBatch(supabase: any, pipeline: any, openaiKey: string, startTime: number) {

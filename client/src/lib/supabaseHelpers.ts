@@ -49,6 +49,18 @@ export function contactFromDb(dbRow: any): Contact {
     isFamilyOffice: dbRow.is_family_office ?? false,
     investmentTypes: dbRow.investment_types,
     avgCheckSize: dbRow.avg_check_size,
+    relationshipStrength: dbRow.relationship_strength ?? undefined,
+    education: dbRow.education ?? undefined,
+    careerHistory: dbRow.career_history ?? undefined,
+    personalInterests: dbRow.personal_interests ?? undefined,
+    expertiseAreas: dbRow.expertise_areas ?? undefined,
+    portfolioCompanies: dbRow.portfolio_companies ?? undefined,
+    lastEnrichedAt: dbRow.last_enriched_at ? new Date(dbRow.last_enriched_at) : undefined,
+    enrichmentSource: dbRow.enrichment_source ?? undefined,
+    dataCompletenessScore: dbRow.data_completeness_score ?? undefined,
+    enrichmentConfidence: dbRow.enrichment_confidence ?? undefined,
+    thesisSource: dbRow.thesis_source ?? undefined,
+    verifiedFields: dbRow.verified_fields ?? [],
     createdAt: new Date(dbRow.created_at),
     updatedAt: new Date(dbRow.updated_at),
   };
@@ -97,6 +109,9 @@ export function contactToDb(contact: Partial<Contact>): any {
   if (contact.isFamilyOffice !== undefined) dbRow.is_family_office = contact.isFamilyOffice;
   if (contact.investmentTypes !== undefined) dbRow.investment_types = contact.investmentTypes;
   if (contact.avgCheckSize !== undefined) dbRow.avg_check_size = contact.avgCheckSize;
+  if ('enrichmentConfidence' in contact) dbRow.enrichment_confidence = contact.enrichmentConfidence;
+  if ('thesisSource' in contact) dbRow.thesis_source = contact.thesisSource;
+  if ('verifiedFields' in contact) dbRow.verified_fields = contact.verifiedFields;
   
   return dbRow;
 }
@@ -265,6 +280,9 @@ export function matchFromDb(dbRow: any): MatchSuggestion {
     status: dbRow.status,
     promiseStatus: dbRow.promise_status,
     promisedAt: dbRow.promised_at ? new Date(dbRow.promised_at) : null,
+    scoreBreakdown: dbRow.score_breakdown ?? {},
+    confidenceScores: dbRow.confidence_scores ?? {},
+    matchVersion: dbRow.match_version ?? 'v1.0',
     createdAt: new Date(dbRow.created_at),
     updatedAt: new Date(dbRow.updated_at),
   };

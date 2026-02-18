@@ -1,7 +1,8 @@
+import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Building2, DollarSign, Users, Sparkles, Mail, Linkedin, MapPin, Phone, Tag, Twitter as TwitterIcon, BrainCircuit, Loader2, Target, TrendingUp, Globe } from "lucide-react";
+import { Building2, DollarSign, Users, Sparkles, Mail, Linkedin, MapPin, Phone, Tag, Twitter as TwitterIcon, BrainCircuit, Loader2, Target, TrendingUp, Globe, GraduationCap, Briefcase, Heart, Lightbulb } from "lucide-react";
 
 const ExpandIcon = ({ className }: { className?: string }) => (
   <svg 
@@ -62,6 +63,14 @@ interface ContactCardProps {
   checkSizeMin?: number;
   checkSizeMax?: number;
   investorNotes?: string;
+  
+  // Enrichment fields
+  education?: Array<{school: string; degree: string; field: string; year: number}>;
+  careerHistory?: Array<{company: string; role: string; years: string; description: string}>;
+  personalInterests?: string[];
+  expertiseAreas?: string[];
+  portfolioCompanies?: string[];
+  dataCompletenessScore?: number;
 }
 
 // Helper function to auto-detect contact types from title
@@ -129,11 +138,20 @@ export default function ContactCard({
   checkSizeMin,
   checkSizeMax,
   investorNotes,
+  education,
+  careerHistory,
+  personalInterests,
+  expertiseAreas,
+  portfolioCompanies,
+  dataCompletenessScore,
 }: ContactCardProps) {
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   
   const { data: thesis, isLoading: thesisLoading } = useContactThesis(id);
   const extractThesisMutation = useExtractThesis();
+
+  const handleCardClick = () => setLocation(`/contacts/${id}`);
   
   const handleExtractThesis = async () => {
     try {
@@ -165,15 +183,22 @@ export default function ContactCard({
     : detectContactTypesFromTitle(role);
 
   return (
-    <Card className="p-5 hover-elevate" data-testid={`contact-card-${id}`}>
+    <Card
+      className="p-5 hover-elevate cursor-pointer"
+      data-testid={`contact-card-${id}`}
+      onClick={handleCardClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), handleCardClick())}
+    >
       <div className="space-y-3">
         {/* Icons at the top, right-aligned */}
         <div className="flex items-center justify-end gap-1">
           <Button
             size="icon"
             variant="ghost"
-            onClick={() => {
-              console.log('[ContactCard] Enrichment button clicked for:', fullName, id);
+            onClick={(e) => {
+              e.stopPropagation();
               onEnrich();
             }}
             data-testid="button-enrich-contact"
@@ -184,9 +209,12 @@ export default function ContactCard({
           <Button
             size="icon"
             variant="ghost"
-            onClick={onEdit}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
             data-testid="button-edit-contact"
-            title="Expand contact details"
+            title="Edit contact"
           >
             <ExpandIcon className="w-4 h-4" />
           </Button>
@@ -194,13 +222,20 @@ export default function ContactCard({
         
         {/* Name and role tags below icons */}
         <div>
-          {displayContactTypes.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap mb-1">
-              {displayContactTypes.map((type) => (
-                <RoleTag key={type} type={type} />
-              ))}
-            </div>
-          )}
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            {displayContactTypes.length > 0 && displayContactTypes.map((type) => (
+              <RoleTag key={type} type={type} />
+            ))}
+            {dataCompletenessScore !== undefined && (
+              <Badge 
+                variant={dataCompletenessScore >= 70 ? "default" : dataCompletenessScore >= 40 ? "secondary" : "outline"} 
+                className="text-xs"
+                data-testid="completeness-badge"
+              >
+                {dataCompletenessScore}% complete
+              </Badge>
+            )}
+          </div>
           <h3 className="text-base font-semibold" data-testid="text-contact-name">
             {fullName}
           </h3>
@@ -341,6 +376,87 @@ export default function ContactCard({
             </div>
           )}
           
+          {/* Education Section */}
+          {education && education.length > 0 && (
+            <div className="pt-2 space-y-1" data-testid="education-section">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-3.5 h-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium text-muted-foreground">Education</p>
+              </div>
+              {education.map((edu, i) => (
+                <div key={i} className="text-xs text-muted-foreground pl-5">
+                  {edu.degree} {edu.field && `in ${edu.field}`} - {edu.school} {edu.year && `(${edu.year})`}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Career History Section */}
+          {careerHistory && careerHistory.length > 0 && careerHistory.length <= 3 && (
+            <div className="pt-2 space-y-1" data-testid="career-section">
+              <div className="flex items-center gap-2">
+                <Briefcase className="w-3.5 h-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium text-muted-foreground">Career</p>
+              </div>
+              {careerHistory.slice(0, 3).map((career, i) => (
+                <div key={i} className="text-xs text-muted-foreground pl-5">
+                  <span className="font-medium">{career.role}</span> at {career.company} ({career.years})
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {/* Expertise Areas Section */}
+          {expertiseAreas && expertiseAreas.length > 0 && (
+            <div className="pt-2" data-testid="expertise-section">
+              <div className="flex items-center gap-2 mb-1">
+                <Lightbulb className="w-3.5 h-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium text-muted-foreground">Expertise</p>
+              </div>
+              <div className="flex flex-wrap gap-1 pl-5">
+                {expertiseAreas.slice(0, 5).map((area, i) => (
+                  <Badge key={i} variant="outline" className="text-xs">
+                    {area}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Personal Interests Section */}
+          {personalInterests && personalInterests.length > 0 && (
+            <div className="pt-2" data-testid="interests-section">
+              <div className="flex items-center gap-2 mb-1">
+                <Heart className="w-3.5 h-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium text-muted-foreground">Interests</p>
+              </div>
+              <div className="flex flex-wrap gap-1 pl-5">
+                {personalInterests.slice(0, 5).map((interest, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs">
+                    {interest}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          
+          {/* Portfolio Companies Section (for investors) */}
+          {portfolioCompanies && portfolioCompanies.length > 0 && (
+            <div className="pt-2" data-testid="portfolio-section">
+              <div className="flex items-center gap-2 mb-1">
+                <Building2 className="w-3.5 h-3.5 text-muted-foreground" />
+                <p className="text-xs font-medium text-muted-foreground">Portfolio</p>
+              </div>
+              <div className="flex flex-wrap gap-1 pl-5">
+                {portfolioCompanies.slice(0, 6).map((company, i) => (
+                  <Badge key={i} variant="outline" className="text-xs bg-primary/5">
+                    {company}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+          
           {/* Thesis Keywords Section */}
           {hasThesisData ? (
             <div className="pt-2 space-y-2" data-testid="thesis-section">
@@ -398,7 +514,10 @@ export default function ContactCard({
               size="sm"
               variant="ghost"
               className="mt-2 text-xs"
-              onClick={handleExtractThesis}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleExtractThesis();
+              }}
               disabled={extractThesisMutation.isPending}
               data-testid="button-extract-thesis"
             >

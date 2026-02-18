@@ -1,11 +1,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { isExternalMeeting } from '../_shared/meeting-classifier.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 serve(async (req) => {
@@ -16,7 +14,7 @@ serve(async (req) => {
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
     const authHeader = req.headers.get('Authorization');
@@ -31,9 +29,6 @@ serve(async (req) => {
     if (authError || !user) {
       throw new Error('Unauthorized');
     }
-    
-    // Get user's email for external meeting detection
-    const userEmail = user.email;
 
     // Get user's Google OAuth tokens
     const { data: prefs, error: prefsError } = await supabaseClient
@@ -193,10 +188,7 @@ serve(async (req) => {
         responseStatus: a.responseStatus,
       })) || [];
 
-      // Determine if meeting has external attendees
-      const hasExternalAttendees = userEmail ? isExternalMeeting(userEmail, attendees) : false;
-
-      // Upsert event (use both external_event_id and owned_by_profile for conflict resolution)
+      // Upsert event
       const { error: upsertError } = await supabaseClient
         .from('calendar_events')
         .upsert({
@@ -209,10 +201,8 @@ serve(async (req) => {
           attendees: attendees,
           location: event.location || null,
           meeting_url: event.hangoutLink || null,
-          is_external_meeting: hasExternalAttendees,
         }, {
-          onConflict: 'external_event_id,owned_by_profile',
-          ignoreDuplicates: false,
+          onConflict: 'external_event_id',
         });
 
       if (upsertError) {

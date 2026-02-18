@@ -1,204 +1,20 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import OpenAI from 'https://esm.sh/openai@4';
 import { PerformanceMonitor } from '../_shared/monitoring.ts';
+import {
+  fuzzyNameMatch,
+  matchesAny,
+  parseCheckSize,
+  cosineSimilarity,
+  jaccardSimilarity,
+  weightedJaccardSimilarity,
+  checkSizeFit,
+} from '../_shared/matching-utils.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-// Fuzzy name matching with similarity scoring
-function fuzzyNameMatch(mentionedName: string, contactName: string): { match: boolean; score: number; type: string } {
-  const mentioned = mentionedName.toLowerCase().trim();
-  const contact = contactName.toLowerCase().trim();
-  
-  // Exact match
-  if (mentioned === contact) {
-    return { match: true, score: 1.0, type: 'exact' };
-  }
-  
-  // One contains the other (e.g., "Roy Bahat" in "Roy E. Bahat")
-  if (contact.includes(mentioned) || mentioned.includes(contact)) {
-    return { match: true, score: 0.95, type: 'contains' };
-  }
-  
-  // Split into parts
-  const mentionedParts = mentioned.split(/\s+/).filter(p => p.length > 1);
-  const contactParts = contact.split(/\s+/).filter(p => p.length > 1);
-  
-  // Handle single-word names (first name only match)
-  if (mentionedParts.length === 1 && contactParts.length >= 1) {
-    const singleName = mentionedParts[0];
-    const contactFirst = contactParts[0];
-    
-    // Exact first name match
-    if (singleName === contactFirst) {
-      return { match: true, score: 0.7, type: 'first-only' };
-    }
-    
-    // Nickname match for first name
-    const nicknames: Record<string, string[]> = {
-      'matt': ['matthew', 'mat'],
-      'matthew': ['matt', 'mat'],
-      'rob': ['robert', 'bob', 'bobby'],
-      'robert': ['rob', 'bob', 'bobby'],
-      'mike': ['michael', 'mick'],
-      'michael': ['mike', 'mick'],
-    };
-    
-    if (nicknames[singleName]?.includes(contactFirst) || nicknames[contactFirst]?.includes(singleName)) {
-      return { match: true, score: 0.65, type: 'first-nickname' };
-    }
-    
-    return { match: false, score: 0, type: 'none' };
-  }
-  
-  if (mentionedParts.length < 2 || contactParts.length < 1) {
-    return { match: false, score: 0, type: 'none' };
-  }
-  
-  const mentionedFirst = mentionedParts[0];
-  const mentionedLast = mentionedParts[mentionedParts.length - 1];
-  const contactFirst = contactParts[0];
-  const contactLast = contactParts[contactParts.length - 1];
-  
-  // Check for nickname matches (Matt/Matthew, Rob/Robert, etc.)
-  const nicknames: Record<string, string[]> = {
-    'matt': ['matthew', 'mat'],
-    'matthew': ['matt', 'mat'],
-    'rob': ['robert', 'bob', 'bobby'],
-    'robert': ['rob', 'bob', 'bobby'],
-    'bob': ['robert', 'rob', 'bobby'],
-    'mike': ['michael', 'mick'],
-    'michael': ['mike', 'mick'],
-    'jim': ['james', 'jimmy'],
-    'james': ['jim', 'jimmy'],
-    'bill': ['william', 'will', 'billy'],
-    'william': ['bill', 'will', 'billy'],
-    'tom': ['thomas', 'tommy'],
-    'thomas': ['tom', 'tommy'],
-    'joe': ['joseph', 'joey'],
-    'joseph': ['joe', 'joey'],
-    'dan': ['daniel', 'danny'],
-    'daniel': ['dan', 'danny'],
-    'chris': ['christopher', 'kristopher'],
-    'christopher': ['chris'],
-    'alex': ['alexander', 'alexandra'],
-    'alexander': ['alex'],
-    'sam': ['samuel', 'samantha'],
-    'samuel': ['sam'],
-    'nick': ['nicholas', 'nicolas'],
-    'nicholas': ['nick', 'nicolas'],
-    'steve': ['steven', 'stephen'],
-    'steven': ['steve', 'stephen'],
-    'stephen': ['steve', 'steven'],
-    'tony': ['anthony'],
-    'anthony': ['tony'],
-    'dave': ['david'],
-    'david': ['dave'],
-    'ed': ['edward', 'eddie'],
-    'edward': ['ed', 'eddie'],
-    'sara': ['sarah'],
-    'sarah': ['sara'],
-    'kate': ['katherine', 'catherine', 'kathy'],
-    'katherine': ['kate', 'kathy', 'katie'],
-    'liz': ['elizabeth', 'beth', 'lizzy'],
-    'elizabeth': ['liz', 'beth', 'lizzy'],
-    'jen': ['jennifer', 'jenny'],
-    'jennifer': ['jen', 'jenny'],
-  };
-  
-  // Check first name match (exact or nickname)
-  let firstNameMatch = false;
-  if (mentionedFirst === contactFirst) {
-    firstNameMatch = true;
-  } else if (contactFirst.startsWith(mentionedFirst) || mentionedFirst.startsWith(contactFirst)) {
-    firstNameMatch = true;
-  } else if (nicknames[mentionedFirst]?.includes(contactFirst) || nicknames[contactFirst]?.includes(mentionedFirst)) {
-    firstNameMatch = true;
-  }
-  
-  // Check last name match (exact or close)
-  let lastNameMatch = false;
-  if (mentionedLast === contactLast) {
-    lastNameMatch = true;
-  } else if (levenshteinDistance(mentionedLast, contactLast) <= 2) {
-    lastNameMatch = true;
-  }
-  
-  // Both first and last match
-  if (firstNameMatch && lastNameMatch) {
-    return { match: true, score: 0.9, type: 'fuzzy-both' };
-  }
-  
-  // Only last name matches exactly (common for formal references)
-  if (mentionedLast === contactLast && mentionedParts.length === 1) {
-    return { match: true, score: 0.7, type: 'last-only' };
-  }
-  
-  // Levenshtein distance for close spelling
-  const fullDistance = levenshteinDistance(mentioned, contact);
-  const maxLen = Math.max(mentioned.length, contact.length);
-  const similarity = 1 - (fullDistance / maxLen);
-  
-  if (similarity >= 0.8) {
-    return { match: true, score: similarity, type: 'levenshtein' };
-  }
-  
-  return { match: false, score: 0, type: 'none' };
-}
-
-// Levenshtein distance for fuzzy string matching
-function levenshteinDistance(a: string, b: string): number {
-  const matrix: number[][] = [];
-  
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-  
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-  
-  return matrix[b.length][a.length];
-}
-
-// Check if a value matches any item in an array (case-insensitive, partial match)
-function matchesAny(value: string, items: string[]): boolean {
-  const valueLower = value.toLowerCase();
-  return items.some(item => {
-    const itemLower = item.toLowerCase();
-    return valueLower.includes(itemLower) || itemLower.includes(valueLower);
-  });
-}
-
-// Parse check size from string (e.g., "$5,000,000" -> 5000000)
-function parseCheckSize(value: string): number | null {
-  const cleaned = value.replace(/[$,]/g, '').toLowerCase();
-  const match = cleaned.match(/(\d+(?:\.\d+)?)\s*(k|m|million|thousand)?/);
-  if (!match) return null;
-  
-  let num = parseFloat(match[1]);
-  const suffix = match[2];
-  
-  if (suffix === 'k' || suffix === 'thousand') num *= 1000;
-  if (suffix === 'm' || suffix === 'million') num *= 1000000;
-  
-  return num;
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -283,6 +99,7 @@ Deno.serve(async (req) => {
         id, name, first_name, last_name, title, company, location, bio,
         category, contact_type, check_size_min, check_size_max, is_investor,
         relationship_strength, bio_embedding, thesis_embedding, investor_notes,
+        education, personal_interests, expertise_areas, portfolio_companies,
         theses (id, sectors, stages, geos)
       `)
       .eq('owned_by_profile', user.id);
@@ -311,12 +128,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Parse entities by type
+    // Parse entities by type (preserving confidence for weighted scoring)
+    const parseConf = (e: any): number => {
+      const c = parseFloat(e.confidence);
+      return isNaN(c) ? 0.5 : c;
+    };
     const sectors = entities.filter(e => e.entity_type === 'sector').map(e => e.value);
     const stages = entities.filter(e => e.entity_type === 'stage').map(e => e.value);
     const checkSizes = entities.filter(e => e.entity_type === 'check_size').map(e => e.value);
     const geos = entities.filter(e => e.entity_type === 'geo').map(e => e.value);
     const personNames = entities.filter(e => e.entity_type === 'person_name').map(e => e.value);
+
+    // Build confidence-weighted entity list for weighted Jaccard
+    const weightedEntities = entities
+      .filter(e => ['sector', 'stage', 'geo'].includes(e.entity_type))
+      .map(e => ({ value: e.value, weight: parseConf(e) }));
     
     console.log('=== PARSED ENTITIES ===');
     console.log('Sectors:', sectors);
@@ -332,62 +158,53 @@ Deno.serve(async (req) => {
     console.log('Parsed check size range:', minCheckSize, '-', maxCheckSize);
 
     // Get conversation embedding if available
+    // PostgREST returns pgvector columns as string (e.g. "[0.1,-0.02,...]"), not array — normalize to number[]
+    function embeddingToArray(v: unknown): number[] | null {
+      if (v == null) return null;
+      if (Array.isArray(v) && v.length === 1536 && typeof v[0] === 'number') return v as number[];
+      if (typeof v === 'string') {
+        try {
+          const arr = JSON.parse(v) as number[];
+          return Array.isArray(arr) && arr.length === 1536 ? arr : null;
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    }
+
     const { data: conversationData } = await supabaseService
       .from('conversations')
       .select('context_embedding')
       .eq('id', conversationId)
       .single();
+
+    const conversationEmbedding = embeddingToArray(conversationData?.context_embedding);
+    const hasEmbeddings = conversationEmbedding !== null;
     
-    const conversationEmbedding = conversationData?.context_embedding;
-    const hasEmbeddings = conversationEmbedding && conversationEmbedding.length === 1536;
-    
-    // Weighted scoring formula with embeddings
+    // Weighted scoring formula with embeddings and personal affinity
     // When embeddings are available, we use them for semantic matching
     const WEIGHTS = hasEmbeddings ? {
-      embedding: 0.30,      // NEW: Semantic similarity via embeddings
-      semantic: 0.10,       // REDUCED: Keyword fallback
-      tagOverlap: 0.30,     // REDUCED: Still important
-      roleMatch: 0.10,      // REDUCED: Still relevant
-      geoMatch: 0.10,       // SAME: Geographic matching
-      relationship: 0.10,   // REDUCED: Relationship strength
+      embedding: 0.25,         // Semantic similarity via embeddings (bio + thesis)
+      semantic: 0.10,          // Keyword fallback
+      tagOverlap: 0.20,        // Tag/thesis overlap (Jaccard)
+      roleMatch: 0.10,         // Role/investor type matching
+      geoMatch: 0.05,          // Geographic matching
+      relationship: 0.10,      // Relationship strength
+      personalAffinity: 0.15,  // Education, interests, expertise overlap
+      checkSize: 0.05,         // Check-size range fit (investors)
     } : {
-      semantic: 0.2,        // Original weight
-      tagOverlap: 0.35,     // Original weight
-      roleMatch: 0.15,      // Original weight
-      geoMatch: 0.1,        // Original weight
-      relationship: 0.2,    // Original weight
+      semantic: 0.15,          // Keyword matching
+      tagOverlap: 0.25,        // Tag/thesis overlap
+      roleMatch: 0.15,         // Role/investor type matching
+      geoMatch: 0.05,          // Geographic matching
+      relationship: 0.15,      // Relationship strength
+      personalAffinity: 0.20,  // Education, interests, expertise overlap
+      checkSize: 0.05,         // Check-size range fit (investors)
     };
     
     console.log('Embeddings available:', hasEmbeddings);
     console.log('Using weights:', WEIGHTS);
-    
-    // Helper: Cosine similarity for embeddings
-    function cosineSimilarity(vec1: number[], vec2: number[]): number {
-      if (vec1.length !== vec2.length) return 0;
-      
-      let dotProduct = 0;
-      let norm1 = 0;
-      let norm2 = 0;
-      
-      for (let i = 0; i < vec1.length; i++) {
-        dotProduct += vec1[i] * vec2[i];
-        norm1 += vec1[i] * vec1[i];
-        norm2 += vec2[i] * vec2[i];
-      }
-      
-      const magnitude = Math.sqrt(norm1) * Math.sqrt(norm2);
-      return magnitude === 0 ? 0 : dotProduct / magnitude;
-    }
-    
-    // Helper: Jaccard similarity for tag overlap
-    function jaccardSimilarity(set1: string[], set2: string[]): number {
-      if (set1.length === 0 && set2.length === 0) return 0;
-      const s1 = new Set(set1.map(s => s.toLowerCase()));
-      const s2 = new Set(set2.map(s => s.toLowerCase()));
-      const intersection = [...s1].filter(x => s2.has(x)).length;
-      const union = new Set([...s1, ...s2]).size;
-      return union > 0 ? intersection / union : 0;
-    }
     
     // Helper: Check role/title match for hiring needs
     function roleMatchScore(contactTitle: string | null, neededRoles: string[]): number {
@@ -409,13 +226,21 @@ Deno.serve(async (req) => {
     console.log('Investor types:', investorTypes);
     
     // Build search tags from conversation context
+    const richKeywords = [
+      ...(conversationContext?.domains_and_topics?.product_keywords || []),
+      ...(conversationContext?.domains_and_topics?.technology_keywords || []),
+    ];
     const conversationTags: string[] = [
       ...sectors,
       ...stages,
       ...geos,
-      ...(conversationContext?.domains_and_topics?.product_keywords || []),
-      ...(conversationContext?.domains_and_topics?.technology_keywords || []),
+      ...richKeywords,
     ];
+
+    // Append rich-context keywords to weighted entities with default confidence
+    for (const kw of richKeywords) {
+      weightedEntities.push({ value: kw, weight: 0.7 });
+    }
     
     // Helper: Calculate confidence scores for each component
     function calculateConfidenceScores(
@@ -519,6 +344,8 @@ Deno.serve(async (req) => {
         roleMatchScore: 0,
         geoMatchScore: 0,
         relationshipScore: 0,
+        personalAffinityScore: 0,
+        checkSizeScore: 0,
         nameMatch: false,
         nameMatchScore: 0,
         nameMatchType: 'none',
@@ -557,11 +384,20 @@ Deno.serve(async (req) => {
         }
       }
       
-      // 0. EMBEDDING SIMILARITY (30% weight when available) - Semantic matching via embeddings
-      if (hasEmbeddings && contact.bio_embedding && contact.bio_embedding.length === 1536) {
-        matchDetails.embeddingScore = cosineSimilarity(conversationEmbedding, contact.bio_embedding);
-        // Normalize to 0-1 range (cosine similarity is already -1 to 1, but typically 0-1 for similar vectors)
-        matchDetails.embeddingScore = Math.max(0, Math.min(1, matchDetails.embeddingScore));
+      // 0. EMBEDDING SIMILARITY (25% weight when available) - Semantic matching via embeddings
+      // Uses the best of bio_embedding and thesis_embedding for richer investor matching
+      const contactBioEmb = embeddingToArray(contact.bio_embedding);
+      const contactThesisEmb = embeddingToArray(contact.thesis_embedding);
+      if (hasEmbeddings && conversationEmbedding) {
+        let bioSim = 0;
+        let thesisSim = 0;
+        if (contactBioEmb) {
+          bioSim = Math.max(0, Math.min(1, cosineSimilarity(conversationEmbedding, contactBioEmb)));
+        }
+        if (contactThesisEmb) {
+          thesisSim = Math.max(0, Math.min(1, cosineSimilarity(conversationEmbedding, contactThesisEmb)));
+        }
+        matchDetails.embeddingScore = Math.max(bioSim, thesisSim);
       }
       
       // 1. SEMANTIC SIMILARITY (10-20% weight) - Keyword matching fallback
@@ -585,8 +421,11 @@ Deno.serve(async (req) => {
         ? Math.min(keywordMatches / Math.max(allSearchTerms.length, 1), 1)
         : 0;
       
-      // 2. TAG OVERLAP (20% weight) - Jaccard similarity
-      matchDetails.tagOverlapScore = jaccardSimilarity(conversationTags, contactTags);
+      // 2. TAG OVERLAP (20% weight) - Confidence-weighted Jaccard similarity
+      // Uses entity confidence to weight each tag's contribution
+      matchDetails.tagOverlapScore = weightedEntities.length > 0
+        ? weightedJaccardSimilarity(weightedEntities, contactTags)
+        : jaccardSimilarity(conversationTags, contactTags);
       if (matchDetails.tagOverlapScore > 0.1) {
         const matchedTags = conversationTags.filter(t => 
           contactTags.some(ct => ct.toLowerCase().includes(t.toLowerCase()))
@@ -627,6 +466,86 @@ Deno.serve(async (req) => {
       // 5. RELATIONSHIP STRENGTH (10% weight) - Normalized 0-1
       const relStrength = contact.relationship_strength ?? 50;
       matchDetails.relationshipScore = relStrength / 100;
+
+      // 5b. CHECK-SIZE FIT (5% weight) - Investor check size vs conversation raise amount
+      if (contact.is_investor && (minCheckSize !== null || maxCheckSize !== null)) {
+        matchDetails.checkSizeScore = checkSizeFit(
+          minCheckSize, maxCheckSize,
+          contact.check_size_min, contact.check_size_max,
+        );
+        if (matchDetails.checkSizeScore >= 0.8) {
+          reasons.push('Check size fits');
+        }
+      }
+
+      // 6. PERSONAL AFFINITY (15% weight) - Education, interests, portfolio overlap
+      let personalAffinityScore = 0;
+      
+      // Check education overlap (school matching)
+      const targetEducation = conversationContext?.target_person?.education;
+      if (targetEducation?.school && contact.education) {
+        const educationArray = Array.isArray(contact.education) ? contact.education : [];
+        const hasSchoolMatch = educationArray.some((edu: any) => 
+          edu.school && targetEducation.school && 
+          edu.school.toLowerCase().includes(targetEducation.school.toLowerCase())
+        );
+        if (hasSchoolMatch) {
+          personalAffinityScore += 0.4;
+          reasons.push(`Shared education: ${targetEducation.school}`);
+        }
+      }
+      
+      // Check personal interests overlap
+      const targetInterests = conversationContext?.target_person?.personal_interests || [];
+      if (targetInterests.length > 0 && contact.personal_interests && contact.personal_interests.length > 0) {
+        const sharedInterests = contact.personal_interests.filter((interest: string) =>
+          targetInterests.some((ti: string) => 
+            interest.toLowerCase().includes(ti.toLowerCase()) || 
+            ti.toLowerCase().includes(interest.toLowerCase())
+          )
+        );
+        if (sharedInterests.length > 0) {
+          personalAffinityScore += Math.min(sharedInterests.length * 0.2, 0.4);
+          reasons.push(`Shared interests: ${sharedInterests.slice(0, 2).join(', ')}`);
+        }
+      }
+      
+      // Check portfolio overlap (for investors)
+      if (contact.portfolio_companies && contact.portfolio_companies.length > 0) {
+        const mentionedCompanies = [
+          conversationContext?.target_person?.company,
+          ...(conversationContext?.domains_and_topics?.companies_mentioned || [])
+        ].filter(Boolean).map((c: string) => c.toLowerCase());
+        
+        const portfolioOverlap = contact.portfolio_companies.filter((pc: string) =>
+          mentionedCompanies.some((mc: string) => 
+            pc.toLowerCase().includes(mc) || mc.includes(pc.toLowerCase())
+          )
+        );
+        
+        if (portfolioOverlap.length > 0) {
+          personalAffinityScore += 0.3;
+          reasons.push(`Portfolio overlap: ${portfolioOverlap.slice(0, 2).join(', ')}`);
+        }
+      }
+      
+      // Expertise areas matching (specific domains beyond sectors)
+      if (contact.expertise_areas && contact.expertise_areas.length > 0) {
+        const targetExpertise = conversationContext?.domains_and_topics?.technology_keywords || [];
+        const expertiseOverlap = contact.expertise_areas.filter((exp: string) =>
+          targetExpertise.some((te: string) => 
+            exp.toLowerCase().includes(te.toLowerCase()) ||
+            te.toLowerCase().includes(exp.toLowerCase())
+          )
+        );
+        
+        if (expertiseOverlap.length > 0) {
+          personalAffinityScore += Math.min(expertiseOverlap.length * 0.15, 0.3);
+          reasons.push(`Expertise match: ${expertiseOverlap.slice(0, 2).join(', ')}`);
+        }
+      }
+      
+      matchDetails.personalAffinityScore = Math.min(personalAffinityScore, 1);
       
       // NAME MATCH - Major boost for explicit mentions
       const namesToCheck: string[] = [];
@@ -649,19 +568,45 @@ Deno.serve(async (req) => {
         }
       }
       
-      // CALCULATE WEIGHTED SCORE (0-1 range)
-      let rawScore = hasEmbeddings
-        ? WEIGHTS.embedding * matchDetails.embeddingScore +
-          WEIGHTS.semantic * matchDetails.semanticScore +
-          WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
-          WEIGHTS.roleMatch * matchDetails.roleMatchScore +
-          WEIGHTS.geoMatch * matchDetails.geoMatchScore +
-          WEIGHTS.relationship * matchDetails.relationshipScore
-        : WEIGHTS.semantic * matchDetails.semanticScore +
-          WEIGHTS.tagOverlap * matchDetails.tagOverlapScore +
-          WEIGHTS.roleMatch * matchDetails.roleMatchScore +
-          WEIGHTS.geoMatch * matchDetails.geoMatchScore +
-          WEIGHTS.relationship * matchDetails.relationshipScore;
+      // Determine which scoring components have actual data backing them.
+      // Components without data score 0 structurally — renormalizing prevents
+      // contacts with sparse profiles from being penalized unfairly.
+      const dataAvailable: Record<string, boolean> = {
+        embedding: !!(contactBioEmb || contactThesisEmb),
+        semantic: true,
+        tagOverlap: contactTags.length > 0,
+        roleMatch: true,
+        geoMatch: true,
+        relationship: contact.relationship_strength != null && contact.relationship_strength !== 50,
+        personalAffinity: !!(
+          (contact.education && (Array.isArray(contact.education) ? contact.education.length : true)) ||
+          (contact.personal_interests && contact.personal_interests.length) ||
+          (contact.expertise_areas && contact.expertise_areas.length) ||
+          (contact.portfolio_companies && contact.portfolio_companies.length)
+        ),
+        checkSize: !!(contact.is_investor && (contact.check_size_min || contact.check_size_max)),
+      };
+
+      // CALCULATE WEIGHTED SCORE (0-1 range) with cold-start normalization
+      const componentScores: Record<string, number> = {
+        embedding: matchDetails.embeddingScore,
+        semantic: matchDetails.semanticScore,
+        tagOverlap: matchDetails.tagOverlapScore,
+        roleMatch: matchDetails.roleMatchScore,
+        geoMatch: matchDetails.geoMatchScore,
+        relationship: matchDetails.relationshipScore,
+        personalAffinity: matchDetails.personalAffinityScore,
+        checkSize: matchDetails.checkSizeScore,
+      };
+
+      const activeComponents = Object.keys(WEIGHTS).filter((k) => dataAvailable[k]);
+      const activeWeightSum = activeComponents.reduce((s, k) => s + (WEIGHTS as any)[k], 0);
+      const scale = activeWeightSum > 0 ? 1.0 / activeWeightSum : 1.0;
+
+      let rawScore = 0;
+      for (const k of activeComponents) {
+        rawScore += (WEIGHTS as any)[k] * scale * (componentScores[k] ?? 0);
+      }
       
       // NAME MATCH BOOST - Add 0.3 to raw score for name mentions
       if (matchDetails.nameMatch) {
@@ -708,6 +653,9 @@ Deno.serve(async (req) => {
           roleMatch: matchDetails.roleMatchScore,
           geoMatch: matchDetails.geoMatchScore,
           relationship: matchDetails.relationshipScore,
+          personalAffinity: matchDetails.personalAffinityScore,
+          checkSize: matchDetails.checkSizeScore,
+          _available: dataAvailable,
         };
         
         if (hasEmbeddings) {
@@ -834,7 +782,8 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
         justification: match.justification,
         status: 'pending',
         score_breakdown: match.scoreBreakdown || {},
-        match_version: 'v1.1-transparency',
+        confidence_scores: match.confidenceScores || {},
+        match_version: 'v1.3-coldstart',
       };
       
       // Add AI explanation if available
@@ -850,7 +799,7 @@ Write a warm, professional explanation (1-2 sentences) of why connecting these p
         })
         .select(`
           id, conversation_id, contact_id, score, reasons, justification, ai_explanation, status, created_at,
-          score_breakdown, match_version,
+          score_breakdown, confidence_scores, match_version,
           contacts:contact_id ( name )
         `)
         .single();
