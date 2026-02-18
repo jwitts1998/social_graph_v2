@@ -1,7 +1,7 @@
 -- Track user corrections to enriched data for feedback loop analysis
 CREATE TABLE IF NOT EXISTS enrichment_corrections (
-  id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-  contact_id VARCHAR NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   field_name TEXT NOT NULL,
   old_value TEXT,
