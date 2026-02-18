@@ -135,7 +135,7 @@ export default function ContactProfile() {
       const result = await embedContact(contactId);
       toast({
         title: "Embedding generated",
-        description: `Bio embedding ${result?.bio_embedding ? "created" : "skipped"}, thesis embedding ${result?.thesis_embedding ? "created" : "skipped"}.`,
+        description: `Bio embedding ${result?.hasBioEmbedding ? "created" : "skipped"}, thesis embedding ${result?.hasThesisEmbedding ? "created" : "skipped"}.`,
       });
     } catch (err: any) {
       toast({ title: "Embedding failed", description: err.message || "Could not generate embedding.", variant: "destructive" });

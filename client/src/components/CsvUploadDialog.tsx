@@ -46,6 +46,12 @@ interface ParsedContact {
   companyOwler?: string;
   youtubeVimeo?: string;
   isLp?: boolean;
+  isInvestor?: boolean;
+  investorNotes?: string;
+  education?: any[];
+  careerHistory?: any[];
+  expertiseAreas?: string[];
+  preferredStages?: string[];
   errors: string[];
 }
 
@@ -108,6 +114,10 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: (header: string, index: number) => {
+        if (!header || header.trim() === '') return `__col_${index}`;
+        return header;
+      },
       complete: async (results) => {
         const parsed: ParsedContact[] = results.data.map((row: any) => {
           const errors: string[] = [];
@@ -149,6 +159,48 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
           
           const isLp = row.is_lp === 'true' || row.is_lp === '1' || row.type?.toLowerCase() === 'lp';
 
+          // Gap 1: detect misaligned category in companyEmployees
+          // Some rows have industry/category in the employees column (non-numeric)
+          let finalCategory = category;
+          let finalCompanyEmployees = companyEmployees;
+          if (!category && companyEmployees && !/\d/.test(companyEmployees)) {
+            finalCategory = companyEmployees;
+            finalCompanyEmployees = '';
+          }
+
+          // Gap 3: AngelList fallback from unnamed column 40
+          let finalAngellist = angellist;
+          if (!finalAngellist) {
+            finalAngellist = row['__col_40'] || '';
+          }
+
+          // Gap 2: Extract structured data from unnamed columns
+          const investorFlagRaw = row['__col_34'] || row['__col_44'] || '';
+          const isInvestor = investorFlagRaw === 'TRUE' || investorFlagRaw === 'Y' || investorFlagRaw === 'true';
+
+          const careerHistoryRaw: string = row['__col_36'] || '';
+          const careerHistory = careerHistoryRaw
+            ? Array.from(new Set(careerHistoryRaw.split(',').map((s: string) => s.trim()).filter(Boolean)))
+                .map(c => ({ company: c }))
+            : undefined;
+
+          const educationRaw: string = row['__col_41'] || '';
+          const education = educationRaw.trim()
+            ? educationRaw.split(/,\s*(?=[A-Z])/).map((entry: string) => ({ school: entry.trim() }))
+            : undefined;
+
+          const expertiseRaw: string = row['__col_42'] || '';
+          const expertiseAreas = expertiseRaw
+            ? expertiseRaw.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : undefined;
+
+          const preferredStagesRaw: string = row['__col_39'] || '';
+          const preferredStages = preferredStagesRaw
+            ? preferredStagesRaw.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : undefined;
+
+          const investorNotes: string = row['__col_45'] || '';
+
           // Validate required field
           if (!name || name.trim() === '') {
             errors.push('Missing name');
@@ -174,12 +226,12 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
             linkedinUrl: linkedin ? normalizeLinkedInUrl(linkedin.trim()) : undefined,
             location: location.trim() || undefined,
             phone: phone.trim() || undefined,
-            category: category.trim() || undefined,
+            category: finalCategory.trim() || undefined,
             twitter: twitter.trim() || undefined,
-            angellist: angellist.trim() || undefined,
+            angellist: finalAngellist.trim() || undefined,
             bio: bio.trim() || undefined,
             companyAddress: companyAddress.trim() || undefined,
-            companyEmployees: companyEmployees.trim() || undefined,
+            companyEmployees: finalCompanyEmployees.trim() || undefined,
             companyFounded: companyFounded.trim() || undefined,
             companyUrl: companyUrl.trim() || undefined,
             companyLinkedin: companyLinkedin.trim() || undefined,
@@ -190,6 +242,12 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
             companyOwler: companyOwler.trim() || undefined,
             youtubeVimeo: youtubeVimeo.trim() || undefined,
             isLp: isLp || false,
+            isInvestor: isInvestor || undefined,
+            investorNotes: investorNotes.trim() || undefined,
+            education: education || undefined,
+            careerHistory: careerHistory || undefined,
+            expertiseAreas: expertiseAreas?.length ? expertiseAreas : undefined,
+            preferredStages: preferredStages?.length ? preferredStages : undefined,
             errors,
           };
         });
@@ -234,7 +292,7 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
     // Fetch all existing contacts for this user to check for duplicates
     const { data: existingContacts, error: fetchError } = await supabase
       .from('contacts')
-      .select('id, name, email, company, title, linkedin_url, location, phone, bio, company_url, company_address, company_employees, company_founded, company_linkedin, company_twitter')
+      .select('id, name, email, company, title, linkedin_url, location, phone, bio, company_url, company_address, company_employees, company_founded, company_linkedin, company_twitter, first_name, last_name, category, twitter, angellist, company_facebook, company_angellist, company_crunchbase, company_owler, youtube_vimeo, is_investor, investor_notes, education, career_history, expertise_areas, preferred_stages')
       .eq('owned_by_profile', user.id) as { data: any[] | null; error: any };
 
     if (fetchError) {
@@ -324,11 +382,16 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
         const updateData: any = {};
         
         if (csvContact.email && !existingDuplicate.email) updateData.email = csvContact.email;
+        if (csvContact.firstName && !existingDuplicate.first_name) updateData.first_name = csvContact.firstName;
+        if (csvContact.lastName && !existingDuplicate.last_name) updateData.last_name = csvContact.lastName;
         if (csvContact.title && !existingDuplicate.title) updateData.title = csvContact.title;
         if (csvContact.company && !existingDuplicate.company) updateData.company = csvContact.company;
         if (csvContact.linkedinUrl && !existingDuplicate.linkedin_url) updateData.linkedin_url = csvContact.linkedinUrl;
         if (csvContact.location && !existingDuplicate.location) updateData.location = csvContact.location;
         if (csvContact.phone && !existingDuplicate.phone) updateData.phone = csvContact.phone;
+        if (csvContact.category && !existingDuplicate.category) updateData.category = csvContact.category;
+        if (csvContact.twitter && !existingDuplicate.twitter) updateData.twitter = csvContact.twitter;
+        if (csvContact.angellist && !existingDuplicate.angellist) updateData.angellist = csvContact.angellist;
         if (csvContact.bio && !existingDuplicate.bio) updateData.bio = csvContact.bio;
         if (csvContact.companyUrl && !existingDuplicate.company_url) updateData.company_url = csvContact.companyUrl;
         if (csvContact.companyAddress && !existingDuplicate.company_address) updateData.company_address = csvContact.companyAddress;
@@ -336,6 +399,17 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
         if (csvContact.companyFounded && !existingDuplicate.company_founded) updateData.company_founded = csvContact.companyFounded;
         if (csvContact.companyLinkedin && !existingDuplicate.company_linkedin) updateData.company_linkedin = csvContact.companyLinkedin;
         if (csvContact.companyTwitter && !existingDuplicate.company_twitter) updateData.company_twitter = csvContact.companyTwitter;
+        if (csvContact.companyFacebook && !existingDuplicate.company_facebook) updateData.company_facebook = csvContact.companyFacebook;
+        if (csvContact.companyAngellist && !existingDuplicate.company_angellist) updateData.company_angellist = csvContact.companyAngellist;
+        if (csvContact.companyCrunchbase && !existingDuplicate.company_crunchbase) updateData.company_crunchbase = csvContact.companyCrunchbase;
+        if (csvContact.companyOwler && !existingDuplicate.company_owler) updateData.company_owler = csvContact.companyOwler;
+        if (csvContact.youtubeVimeo && !existingDuplicate.youtube_vimeo) updateData.youtube_vimeo = csvContact.youtubeVimeo;
+        if (csvContact.isInvestor && !existingDuplicate.is_investor) updateData.is_investor = csvContact.isInvestor;
+        if (csvContact.investorNotes && !existingDuplicate.investor_notes) updateData.investor_notes = csvContact.investorNotes;
+        if (csvContact.education?.length && !existingDuplicate.education?.length) updateData.education = csvContact.education;
+        if (csvContact.careerHistory?.length && !existingDuplicate.career_history?.length) updateData.career_history = csvContact.careerHistory;
+        if (csvContact.expertiseAreas?.length && !existingDuplicate.expertise_areas?.length) updateData.expertise_areas = csvContact.expertiseAreas;
+        if (csvContact.preferredStages?.length && !existingDuplicate.preferred_stages?.length) updateData.preferred_stages = csvContact.preferredStages;
 
         // Only queue update if there are fields to merge
         if (Object.keys(updateData).length > 0) {
@@ -451,6 +525,24 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
           if (csvContact.youtubeVimeo && !pendingDuplicate.youtube_vimeo) {
             pendingDuplicate.youtube_vimeo = csvContact.youtubeVimeo;
           }
+          if (csvContact.isInvestor && !pendingDuplicate.is_investor) {
+            pendingDuplicate.is_investor = csvContact.isInvestor;
+          }
+          if (csvContact.investorNotes && !pendingDuplicate.investor_notes) {
+            pendingDuplicate.investor_notes = csvContact.investorNotes;
+          }
+          if (csvContact.education?.length && !pendingDuplicate.education?.length) {
+            pendingDuplicate.education = csvContact.education;
+          }
+          if (csvContact.careerHistory?.length && !pendingDuplicate.career_history?.length) {
+            pendingDuplicate.career_history = csvContact.careerHistory;
+          }
+          if (csvContact.expertiseAreas?.length && !pendingDuplicate.expertise_areas?.length) {
+            pendingDuplicate.expertise_areas = csvContact.expertiseAreas;
+          }
+          if (csvContact.preferredStages?.length && !pendingDuplicate.preferred_stages?.length) {
+            pendingDuplicate.preferred_stages = csvContact.preferredStages;
+          }
           
           // Update lookup maps with newly added fields
           updatePendingMaps(pendingDuplicate);
@@ -458,7 +550,7 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
           merged++;
         } else {
           // CREATE: New pending contact
-          const newContact = {
+          const newContact: any = {
             name: csvContact.name,
             first_name: csvContact.firstName || null,
             last_name: csvContact.lastName || null,
@@ -485,6 +577,12 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
             youtube_vimeo: csvContact.youtubeVimeo || null,
             owned_by_profile: user.id,
           };
+          if (csvContact.isInvestor) newContact.is_investor = true;
+          if (csvContact.investorNotes) newContact.investor_notes = csvContact.investorNotes;
+          if (csvContact.education?.length) newContact.education = csvContact.education;
+          if (csvContact.careerHistory?.length) newContact.career_history = csvContact.careerHistory;
+          if (csvContact.expertiseAreas?.length) newContact.expertise_areas = csvContact.expertiseAreas;
+          if (csvContact.preferredStages?.length) newContact.preferred_stages = csvContact.preferredStages;
           
           pendingContacts.push(newContact);
           updatePendingMaps(newContact);

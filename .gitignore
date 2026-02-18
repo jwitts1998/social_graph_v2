@@ -15,5 +15,8 @@ vite.config.ts.*
 
 # MCP Server
 mcp-supabase/node_modules
-mcp-supabase/distGET_API_KEYS.md
+mcp-supabase/dist
+GET_API_KEYS.md
 test-social-enrichment.sh
+.vercel
+.env*.local

@@ -50,8 +50,9 @@ export default function ConversationDetail() {
       return await generateMatches(convId);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversation', conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['matches', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/conversations', conversationId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/conversations/match-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/matches/all'] });
       toast({
         title: "Matches regenerated!",
         description: "The conversation has been reprocessed with the latest matching algorithm.",
