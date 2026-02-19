@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles } from "lucide-react";
 import Papa from "papaparse";
 import { supabase } from "@/lib/supabase";
-import { enrichContact } from "@/lib/edgeFunctions";
+import { researchContact } from "@/lib/edgeFunctions";
 import { queryClient } from "@/lib/queryClient";
 
 interface CsvUploadDialogProps {
@@ -724,15 +724,15 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
     let enriched = 0;
     let enrichmentFailed = 0;
 
-    // Enrich with rate limiting (max 10 concurrent)
-    const CONCURRENT_LIMIT = 10;
+    // Enrich with rate limiting (max 3 concurrent — research-contact does web search + GPT per contact)
+    const CONCURRENT_LIMIT = 3;
     
     for (let i = 0; i < contactsToEnrich.length; i += CONCURRENT_LIMIT) {
       const batch = contactsToEnrich.slice(i, i + CONCURRENT_LIMIT);
       
       const enrichmentPromises = batch.map(async (contact) => {
         try {
-          await enrichContact(contact.id, 'auto');
+          await researchContact(contact.id);
           enriched++;
         } catch (error) {
           enrichmentFailed++;
@@ -744,8 +744,8 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
       setProgress(((i + batch.length) / contactsToEnrich.length) * 100);
       setStats(prev => ({ ...prev, enriched, enrichmentFailed }));
 
-      // Rate limiting delay (avoid hitting API limits)
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Rate limiting delay (web search + GPT needs more breathing room)
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
