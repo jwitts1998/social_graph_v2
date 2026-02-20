@@ -10,10 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { researchContact } from "@/lib/edgeFunctions";
+import { deepResearchContact, researchContact } from "@/lib/edgeFunctions";
+import type { DeepResearchResult } from "@/lib/edgeFunctions";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Sparkles, CheckCircle2, AlertCircle, Globe, Search } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, AlertCircle, Globe, Search, FileSearch, Link2 } from "lucide-react";
 
 interface EnrichmentDialogProps {
   contactId: string;
@@ -32,7 +33,7 @@ export default function EnrichmentDialog({
 }: EnrichmentDialogProps) {
   console.log('[EnrichmentDialog] Rendering - open:', open, 'contactName:', contactName);
   
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<DeepResearchResult | null>(null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -49,24 +50,24 @@ export default function EnrichmentDialog({
   }, [open]);
 
   const handleEnrich = async () => {
-    console.log('[EnrichmentDialog] Starting enrichment for contact:', contactId, contactName);
+    console.log('[EnrichmentDialog] Starting deep research for contact:', contactId, contactName);
     setIsEnriching(true);
     setError(null);
     try {
-      console.log('[EnrichmentDialog] Calling researchContact...');
-      const data = await researchContact(contactId);
-      console.log('[EnrichmentDialog] Research complete:', data);
+      console.log('[EnrichmentDialog] Calling deepResearchContact...');
+      const data = await deepResearchContact(contactId);
+      console.log('[EnrichmentDialog] Deep research complete:', data);
       setResult(data);
       
-      // Invalidate contact cache to refetch updated data
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
       queryClient.invalidateQueries({ queryKey: ['contact', contactId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/contacts', contactId] });
       
-      // Show success toast
       if (data.updated && data.fields.length > 0) {
         toast({
-          title: "Contact enriched! ✨",
-          description: `Updated: ${data.fields.join(', ')}`,
+          title: "Contact enriched!",
+          description: `Updated ${data.fields.length} fields from ${data.deepResearch?.pagesScraped || 0} web pages`,
         });
       } else {
         toast({
@@ -107,7 +108,7 @@ export default function EnrichmentDialog({
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
             <Globe className="w-4 h-4" />
-            Searching the web with AI-powered research (Google + ChatGPT)
+            AI deep research: crawling web pages for rich contact data
           </DialogDescription>
         </DialogHeader>
 
@@ -116,30 +117,30 @@ export default function EnrichmentDialog({
             <div className="flex flex-col items-center justify-center py-12 gap-4">
               <div className="relative">
                 <Loader2 className="w-12 h-12 animate-spin text-primary" />
-                <Search className="w-5 h-5 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary" />
+                <FileSearch className="w-5 h-5 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-primary" />
               </div>
               <div className="text-center space-y-3">
-                <p className="text-sm font-medium">Researching {contactName}...</p>
+                <p className="text-sm font-medium">Deep researching {contactName}...</p>
                 <div className="space-y-1">
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
                     <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse"></span>
-                    Searching Google, LinkedIn, Crunchbase
+                    Searching across Google, LinkedIn, Crunchbase
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
-                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-100"></span>
-                    Extracting bio, education, career history
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></span>
+                    Crawling and scraping discovered web pages
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
-                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-200"></span>
-                    Finding expertise and personal interests
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse" style={{ animationDelay: '300ms' }}></span>
+                    Extracting structured data with AI
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center justify-center gap-2">
-                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse delay-300"></span>
-                    Analyzing portfolio companies (for investors)
+                    <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse" style={{ animationDelay: '450ms' }}></span>
+                    Following leads and synthesizing profile
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground pt-2">
-                  This may take 10-15 seconds...
+                  This may take 20-40 seconds (visiting up to 12 pages)...
                 </p>
               </div>
             </div>
@@ -166,8 +167,8 @@ export default function EnrichmentDialog({
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs flex items-center gap-1">
-                    <Globe className="w-3 h-3" />
-                    Web Search
+                    <FileSearch className="w-3 h-3" />
+                    Deep Research
                   </Badge>
                   {result.bioFound && (
                     <Badge variant="secondary" className="text-xs">
@@ -182,11 +183,28 @@ export default function EnrichmentDialog({
                 </div>
               </div>
 
+              {result.deepResearch && (
+                <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <Globe className="w-3 h-3" />
+                    {result.deepResearch.pagesScraped} pages crawled
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Search className="w-3 h-3" />
+                    {result.deepResearch.searchCalls} searches
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <Link2 className="w-3 h-3" />
+                    {result.deepResearch.iterations} iterations
+                  </span>
+                </div>
+              )}
+
               <Separator />
 
               {result.updated && result.fields.length > 0 ? (
                 <div className="space-y-3">
-                  <p className="text-sm font-semibold">Updated Fields</p>
+                  <p className="text-sm font-semibold">Updated Fields ({result.fields.length})</p>
                   <div className="space-y-2">
                     {result.fields.map((field: string) => (
                       <div key={field} className="flex items-center gap-2 text-sm">
@@ -199,24 +217,35 @@ export default function EnrichmentDialog({
                   <Separator />
                   
                   <div className="p-3 bg-muted rounded-lg space-y-2">
-                    <p className="text-xs font-medium">What was updated?</p>
+                    <p className="text-xs font-medium">Research summary</p>
                     <ul className="text-xs text-muted-foreground space-y-1">
                       {result.bioFound && (
-                        <li>• Professional bio from web sources</li>
+                        <li>Professional bio extracted from web pages</li>
                       )}
                       {result.thesisFound && (
-                        <li>• Investment thesis and preferences</li>
+                        <li>Investment thesis and preferences found</li>
                       )}
-                      {result.fields.includes('linkedin_url') && (
-                        <li>• LinkedIn profile URL</li>
+                      {result.fields.includes('education') && (
+                        <li>Education history discovered</li>
                       )}
-                      {result.fields.includes('location') && (
-                        <li>• Location/geographic information</li>
+                      {result.fields.includes('career_history') && (
+                        <li>Career history extracted</li>
                       )}
-                      {(result.fields.some((f: string) => f.includes('education') || f.includes('career') || f.includes('portfolio'))) && (
-                        <li>• Enhanced profile data (education, career, portfolio)</li>
+                      {result.fields.includes('expertise_areas') && (
+                        <li>Expertise areas identified</li>
+                      )}
+                      {result.fields.includes('personal_interests') && (
+                        <li>Personal interests found</li>
+                      )}
+                      {result.fields.includes('portfolio_companies') && (
+                        <li>Portfolio companies discovered</li>
                       )}
                     </ul>
+                    {result.completenessScore !== undefined && (
+                      <p className="text-xs text-muted-foreground pt-1">
+                        Profile completeness: {result.completenessScore}%
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -225,6 +254,11 @@ export default function EnrichmentDialog({
                   <p className="text-xs mt-2">
                     The contact profile is already complete or public data is limited.
                   </p>
+                  {result.deepResearch && result.deepResearch.pagesScraped > 0 && (
+                    <p className="text-xs mt-1">
+                      Searched {result.deepResearch.pagesScraped} pages across {result.deepResearch.iterations} research iterations.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

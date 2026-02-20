@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Upload, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles } from "lucide-react";
 import Papa from "papaparse";
 import { supabase } from "@/lib/supabase";
-import { researchContact } from "@/lib/edgeFunctions";
+import { deepResearchContact } from "@/lib/edgeFunctions";
 import { queryClient } from "@/lib/queryClient";
 
 interface CsvUploadDialogProps {
@@ -724,15 +724,15 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
     let enriched = 0;
     let enrichmentFailed = 0;
 
-    // Enrich with rate limiting (max 3 concurrent — research-contact does web search + GPT per contact)
-    const CONCURRENT_LIMIT = 3;
+    // Deep research: crawl web pages + extract (20-40s per contact). Max 2 concurrent to avoid timeouts.
+    const CONCURRENT_LIMIT = 2;
     
     for (let i = 0; i < contactsToEnrich.length; i += CONCURRENT_LIMIT) {
       const batch = contactsToEnrich.slice(i, i + CONCURRENT_LIMIT);
       
       const enrichmentPromises = batch.map(async (contact) => {
         try {
-          await researchContact(contact.id);
+          await deepResearchContact(contact.id);
           enriched++;
         } catch (error) {
           enrichmentFailed++;
@@ -744,8 +744,8 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
       setProgress(((i + batch.length) / contactsToEnrich.length) * 100);
       setStats(prev => ({ ...prev, enriched, enrichmentFailed }));
 
-      // Rate limiting delay (web search + GPT needs more breathing room)
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Pause between batches (deep research is ~30s per contact)
+      await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
     queryClient.invalidateQueries({ queryKey: ['/api/contacts'] });
@@ -922,7 +922,7 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
                 <p className="pt-2"><strong>What happens:</strong></p>
                 <p>1. Parse and validate all contacts</p>
                 <p>2. Import to database (even with missing data)</p>
-                <p>3. Enrich with Hunter.io & People Data Labs</p>
+                <p>3. Enrich with AI deep research (web crawl + extraction)</p>
                 <p>4. Validate emails and LinkedIn URLs</p>
                 <p className="text-xs text-muted-foreground mt-1">Tip: Including LinkedIn URLs dramatically improves enrichment accuracy</p>
               </div>
@@ -962,9 +962,9 @@ export default function CsvUploadDialog({ open, onOpenChange }: CsvUploadDialogP
               <div className="flex items-center gap-3">
                 <Sparkles className="w-6 h-6 text-primary animate-pulse" />
                 <div className="flex-1">
-                  <p className="font-medium">Enriching contacts...</p>
+                  <p className="font-medium">Deep researching contacts (crawling web pages)...</p>
                   <p className="text-sm text-muted-foreground">
-                    {stats.enriched} enriched, {stats.enrichmentFailed} failed
+                    {stats.enriched} enriched, {stats.enrichmentFailed} failed — ~30–40s per contact
                   </p>
                 </div>
               </div>

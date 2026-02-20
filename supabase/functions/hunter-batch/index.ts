@@ -94,8 +94,13 @@ serve(async (req) => {
 
     if (!hunterApiKey) {
       return new Response(
-        JSON.stringify({ error: 'Hunter.io API key not configured' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: true,
+          skipped: true,
+          message: 'Hunter.io API key not configured — skipping (non-blocking)',
+          processed: 0,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -156,8 +161,13 @@ serve(async (req) => {
       const accountInfo = await getHunterAccountInfo(hunterApiKey);
       if (!accountInfo) {
         return new Response(
-          JSON.stringify({ error: 'Could not verify Hunter.io credits' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({
+            success: true,
+            skipped: true,
+            message: 'Could not verify Hunter.io credits — skipping (non-blocking)',
+            processed: 0,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
@@ -166,11 +176,14 @@ serve(async (req) => {
       
       if (availableSearches <= 0) {
         return new Response(
-          JSON.stringify({ 
-            error: 'No Hunter.io search credits remaining',
-            credits: accountInfo.data.requests.searches
+          JSON.stringify({
+            success: true,
+            skipped: true,
+            message: 'No Hunter.io search credits remaining — skipping (non-blocking)',
+            processed: 0,
+            credits: accountInfo.data.requests.searches,
           }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 

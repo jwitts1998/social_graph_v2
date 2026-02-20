@@ -99,6 +99,38 @@ export async function researchContact(contactId: string) {
   };
 }
 
+export interface DeepResearchResult {
+  success: boolean;
+  updated: boolean;
+  fields: string[];
+  bioFound: boolean;
+  thesisFound: boolean;
+  thesisSource: string | null;
+  detectedTypes: string[] | null;
+  completenessScore: number;
+  deepResearch: {
+    pagesScraped: number;
+    pagesVisited: string[];
+    iterations: number;
+    extractionCalls: number;
+    searchCalls: number;
+    profileCompleteness: number;
+    sources: Record<string, string[]>;
+  };
+}
+
+export async function deepResearchContact(contactId: string): Promise<DeepResearchResult> {
+  console.log('[Edge Functions] Calling deep-research-contact for:', contactId);
+  const { data, error } = await supabaseClient.functions.invoke('deep-research-contact', {
+    body: { contactId },
+  });
+  if (error) {
+    console.error('[Edge Functions] deep-research-contact error:', error);
+    throw new Error(data?.error || error.message || 'Deep research failed');
+  }
+  return data as DeepResearchResult;
+}
+
 export async function enrichContact(contactId: string, provider?: 'hunter' | 'pdl' | 'auto') {
   const { data, error } = await supabaseClient.functions.invoke('enrich-contact', {
     body: { contactId, provider: provider || 'auto' },
